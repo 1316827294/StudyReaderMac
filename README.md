@@ -23,6 +23,8 @@ open dist/StudyReaderMac.app
 - Stores the OpenAI API key in macOS Keychain.
 - Sends the current reader viewport image plus the currently visible answer text to the OpenAI Responses API.
 - Saves answer text and analysis history locally in Application Support.
+- Shows recently opened books on the start screen using saved session paths.
+- Adds OpenAI responses as colored read-only Markdown feedback below the current answer instead of replacing user text.
 - Version `0.3.0` shows a scrolling answer block list and auto-scrolls it to the current PDF page or EPUB position.
 - Version `0.4.0` shows only the current page/position answer while preserving separate saved answers per page.
 - Version `0.5.0` quits the app process automatically when the last window is closed.
@@ -52,6 +54,11 @@ open dist/StudyReaderMac.app
 - Version `0.29.0` removes manual right-side wheel delta handling and virtual page swapping; the answer sheet now uses native continuous scrolling.
 - Version `0.30.0` aligns right-side answer page heights to the PDF page pitch reported by PDFKit.
 - Version `0.31.0` keeps PDF-aligned answer pages at the exact reported page pitch instead of letting text height stretch page boundaries.
+- Version `0.32.0` adds a recent-books start shelf and stores AI feedback separately as configurable-color Markdown.
+- Version `0.33.0` improves large-book loading with debounced session saves, virtualized answer pages, cached PDF page layout, and asynchronous chapter-based EPUB loading.
+- Version `0.34.0` adds right-click Check Selection for selected answer text, appending selection-scoped Markdown feedback.
+- Version `0.35.0` saves API address, model, and API key together in app settings for future OpenAI calls.
+- Version `0.36.0` makes selected-text checking discoverable with an inline right-click hint and highlighted Check Selection menu item.
 
 ## Notes
 

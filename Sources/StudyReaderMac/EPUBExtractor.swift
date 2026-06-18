@@ -6,8 +6,42 @@ struct EPUBChapter {
 }
 
 struct PreparedEPUB {
-    var html: String
+    var chapters: [EPUBChapter]
     var baseURL: URL
+
+    var chapterCount: Int { chapters.count }
+
+    func htmlForChapter(at index: Int) -> String {
+        let safeIndex = min(max(0, index), max(0, chapters.count - 1))
+        let chapter = chapters[safeIndex]
+        return """
+        <!doctype html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            :root { color-scheme: light dark; }
+            body {
+              margin: 0 auto;
+              max-width: 820px;
+              padding: 36px 48px 96px;
+              font: -apple-system-body;
+              line-height: 1.58;
+              color: CanvasText;
+              background: Canvas;
+            }
+            img, svg, video { max-width: 100%; height: auto; }
+            p { margin: 0 0 0.9em; }
+          </style>
+        </head>
+        <body>
+        <section class="chapter" id="chapter-\(safeIndex)">
+        \(chapter.html)
+        </section>
+        </body>
+        </html>
+        """
+    }
 }
 
 enum EPUBExtractor {
@@ -45,42 +79,7 @@ enum EPUBExtractor {
             throw StudyReaderError.epubExtractionFailed("No readable XHTML spine chapters found.")
         }
 
-        let combinedBody = chapters.enumerated().map { index, chapter in
-            """
-            <section class="chapter" id="chapter-\(index)">
-            \(chapter.html)
-            </section>
-            """
-        }.joined(separator: "\n")
-
-        let html = """
-        <!doctype html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            :root { color-scheme: light dark; }
-            body {
-              margin: 0 auto;
-              max-width: 820px;
-              padding: 36px 48px 96px;
-              font: -apple-system-body;
-              line-height: 1.58;
-              color: CanvasText;
-              background: Canvas;
-            }
-            img, svg, video { max-width: 100%; height: auto; }
-            .chapter { margin-bottom: 44px; }
-            p { margin: 0 0 0.9em; }
-          </style>
-        </head>
-        <body>
-        \(combinedBody)
-        </body>
-        </html>
-        """
-
-        return PreparedEPUB(html: html, baseURL: workURL)
+        return PreparedEPUB(chapters: chapters, baseURL: workURL)
     }
 
     private static func unzip(epubURL: URL, destinationURL: URL) throws {

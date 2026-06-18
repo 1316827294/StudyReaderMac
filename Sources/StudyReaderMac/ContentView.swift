@@ -87,7 +87,7 @@ struct ContentView: View {
 
             Spacer()
 
-            Text("v0.31 Strict-align")
+            Text("v0.36 Selection Check")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
@@ -154,6 +154,7 @@ private struct DocumentPane: View {
                     )
                 case nil:
                     EmptyDocumentView()
+                        .environmentObject(appModel)
                 }
             }
         }
@@ -172,6 +173,8 @@ private struct AnswerPane: View {
             paneHeader("Answer Sheet - \(currentAnchor.label)", systemImage: "keyboard")
             SyncedAnswerSheetView(
                 blocks: appModel.answerBlocks,
+                feedbackByAnchor: appModel.feedbackByAnchor,
+                feedbackAccentColor: appModel.feedbackAccentColor,
                 currentAnchor: currentAnchor,
                 scrollTarget: answerScrollTarget,
                 pageHeights: appModel.documentKind == .pdf ? answerPageHeights : [:],
@@ -181,6 +184,13 @@ private struct AnswerPane: View {
                 onScrollTargetChanged: { target in
                     answerScrollTarget = target
                     currentAnchor = target.anchor
+                },
+                onSelectionCheckRequested: { anchor, selectedText in
+                    appModel.runSelectionCheck(
+                        anchor: anchor,
+                        selectedText: selectedText,
+                        readingFraction: syncFraction
+                    )
                 }
             )
             .frame(minHeight: 520)
@@ -253,18 +263,106 @@ private func paneHeader(_ title: String, systemImage: String) -> some View {
 }
 
 private struct EmptyDocumentView: View {
+    @EnvironmentObject private var appModel: AppModel
+
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "doc.richtext")
-                .font(.system(size: 54))
-                .foregroundStyle(.secondary)
-            Text("Open a PDF or DRM-free EPUB")
-                .font(.title3)
-            Text("The app reads documents inside this window so it can capture only the current reading viewport.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 420)
+        VStack(spacing: 22) {
+            VStack(spacing: 12) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 54))
+                    .foregroundStyle(.secondary)
+                Text("Open a PDF or DRM-free EPUB")
+                    .font(.title3)
+                Text("Recent books appear here after you open them.")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: 420)
+            }
+
+            if !appModel.recentBooks.isEmpty {
+                recentBooks
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+
+    private var recentBooks: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Recent Books", systemImage: "clock")
+                    .font(.headline)
+                Spacer()
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
+                ForEach(appModel.recentBooks) { book in
+                    RecentBookCard(book: book)
+                        .environmentObject(appModel)
+                }
+            }
+        }
+        .frame(maxWidth: 760)
+    }
+}
+
+private struct RecentBookCard: View {
+    @EnvironmentObject private var appModel: AppModel
+    var book: RecentBook
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                Image(systemName: iconName)
+                    .font(.title3)
+                    .foregroundStyle(book.isAvailable ? Color.accentColor : Color.secondary)
+                Spacer()
+                Button {
+                    appModel.forgetRecentBook(book)
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Remove from history")
+            }
+
+            Text(book.title)
+                .font(.headline)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+
+            Text(statusText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 108, alignment: .topLeading)
+        .padding(12)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(book.isAvailable ? Color.secondary.opacity(0.25) : Color.red.opacity(0.45))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            appModel.openRecentBook(book)
+        }
+    }
+
+    private var iconName: String {
+        switch book.kind {
+        case .pdf:
+            "doc.richtext"
+        case .epub:
+            "book"
+        case nil:
+            "questionmark.document"
+        }
+    }
+
+    private var statusText: String {
+        guard book.isAvailable else { return "File missing" }
+        return "\(Int(book.readingFraction * 100))% read"
     }
 }

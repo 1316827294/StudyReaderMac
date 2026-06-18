@@ -1,6 +1,14 @@
 import PDFKit
 import SwiftUI
 
+private struct PDFPageLayout {
+    var page: PDFPage
+    var pageIndex: Int
+    var pageNumber: Int
+    var frame: CGRect
+    var pitchHeight: CGFloat
+}
+
 struct PDFReaderView: NSViewRepresentable {
     var url: URL?
     @Binding var syncFraction: Double
@@ -60,6 +68,9 @@ struct PDFReaderView: NSViewRepresentable {
         private var observer: NSObjectProtocol?
         private var lastAppliedExternalTarget: AnswerScrollTarget?
         private var lastReportedPageHeights: [String: CGFloat] = [:]
+        private var pageLayoutCache: [PDFPageLayout] = []
+        private var cachedDocumentViewSize: CGSize = .zero
+        private var anchorBatchGeneration = 0
         private let viewport: DocumentViewport
 
         init(
@@ -94,6 +105,24 @@ struct PDFReaderView: NSViewRepresentable {
                     coordinator?.captureVisibleJPEG()
                 }
             }
+            viewport.captureReadingText = { [weak self] in
+                let coordinator = self
+
+                // 1) Try native PDFKit text extraction first (works for text-based PDFs)
+                if let nativeText = await MainActor.run(body: {
+                    coordinator?.extractVisiblePagesText()
+                }), !nativeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return nativeText
+                }
+
+                // 2) Fallback: capture screenshot and run OCR (for scanned / image-only PDFs)
+                guard let imageData = await MainActor.run(body: {
+                    coordinator?.captureVisibleJPEG()
+                }) else {
+                    return nil
+                }
+                return await OCRTextRecognizer.recognizeText(in: imageData)
+            }
             viewport.scrollToFraction = { [weak self] fraction in
                 self?.applyScrollFraction(fraction)
             }
@@ -101,15 +130,22 @@ struct PDFReaderView: NSViewRepresentable {
 
         func documentDidLoad() {
             attachScrollObserver()
+            anchorBatchGeneration += 1
+            pageLayoutCache.removeAll()
+            cachedDocumentViewSize = .zero
+            lastReportedPageHeights.removeAll()
             let pageCount = pdfView?.document?.pageCount ?? 0
             if pageCount > 0 {
-                onAnchorsChanged((1...pageCount).map(PositionAnchor.pdfPage))
+                let restoredPage = max(1, min(pageCount, Int((syncFraction.wrappedValue * Double(pageCount)).rounded()) + 1))
+                let initialPages = pageWindow(centeredAt: restoredPage, pageCount: pageCount, radius: 1)
+                onAnchorsChanged(initialPages.map(PositionAnchor.pdfPage))
+                scheduleAnchorBatches(pageCount: pageCount, generation: anchorBatchGeneration)
             }
             DispatchQueue.main.async { [weak self] in
-                self?.reportPageHeightsIfNeeded()
                 if let fraction = self?.syncFraction.wrappedValue, fraction > 0 {
                     self?.applyScrollFraction(fraction)
                 }
+                self?.reportPageHeightsIfNeeded()
                 self?.scrollViewDidScroll()
             }
         }
@@ -175,7 +211,7 @@ struct PDFReaderView: NSViewRepresentable {
                   let documentView = scrollView.documentView
             else { return }
 
-            reportPageHeightsIfNeeded()
+            ensurePageLayoutCache()
             let fraction = SyncMapper.fraction(
                 contentOffset: scrollView.contentView.bounds.origin.y,
                 viewportHeight: scrollView.contentView.bounds.height,
@@ -209,39 +245,54 @@ struct PDFReaderView: NSViewRepresentable {
         }
 
         private func reportPageHeightsIfNeeded() {
+            ensurePageLayoutCache()
+            let next = Dictionary(uniqueKeysWithValues: pageLayoutCache.map { layout in
+                (PositionAnchor.pdfPage(layout.pageNumber).key, layout.pitchHeight)
+            })
+
+            guard pageHeightsChanged(next, comparedTo: lastReportedPageHeights) else { return }
+            lastReportedPageHeights = next
+            onPageHeightsChanged(next)
+        }
+
+        private func ensurePageLayoutCache() {
             guard let pdfView,
                   let document = pdfView.document,
                   let documentView = pdfView.documentView
             else { return }
 
-            var topReferences: [CGFloat] = []
-            var frameHeights: [CGFloat] = []
+            let size = documentView.bounds.size
+            guard pageLayoutCache.isEmpty
+                    || abs(cachedDocumentViewSize.width - size.width) > 1
+                    || abs(cachedDocumentViewSize.height - size.height) > 1
+            else { return }
+
+            cachedDocumentViewSize = size
+            var frames: [(page: PDFPage, index: Int, frame: CGRect)] = []
             for index in 0..<document.pageCount {
                 guard let page = document.page(at: index) else { continue }
                 let pageBounds = pdfView.convert(page.bounds(for: pdfView.displayBox), from: page)
                 let frame = documentView.convert(pageBounds, from: pdfView)
-                topReferences.append(frame.maxY)
-                frameHeights.append(frame.height)
+                frames.append((page, index, frame))
             }
 
-            guard !topReferences.isEmpty else { return }
-
-            var next: [String: CGFloat] = [:]
-            for index in topReferences.indices {
-                let height: CGFloat
-                if index + 1 < topReferences.count {
-                    height = max(1, abs(topReferences[index + 1] - topReferences[index]))
-                } else if index > 0 {
-                    height = max(1, abs(topReferences[index] - topReferences[index - 1]))
+            pageLayoutCache = frames.enumerated().map { offset, item in
+                let pitchHeight: CGFloat
+                if offset + 1 < frames.count {
+                    pitchHeight = max(1, abs(frames[offset + 1].frame.midY - item.frame.midY))
+                } else if offset > 0 {
+                    pitchHeight = max(1, abs(item.frame.midY - frames[offset - 1].frame.midY))
                 } else {
-                    height = max(1, frameHeights[index])
+                    pitchHeight = max(1, item.frame.height)
                 }
-                next[PositionAnchor.pdfPage(index + 1).key] = height
-            }
-
-            guard pageHeightsChanged(next, comparedTo: lastReportedPageHeights) else { return }
-            lastReportedPageHeights = next
-            onPageHeightsChanged(next)
+                return PDFPageLayout(
+                    page: item.page,
+                    pageIndex: item.index,
+                    pageNumber: item.index + 1,
+                    frame: item.frame,
+                    pitchHeight: pitchHeight
+                )
+            }.sorted { $0.frame.minY < $1.frame.minY }
         }
 
         private func pageHeightsChanged(_ lhs: [String: CGFloat], comparedTo rhs: [String: CGFloat]) -> Bool {
@@ -273,29 +324,32 @@ struct PDFReaderView: NSViewRepresentable {
 
         private func dominantVisiblePagePosition(scrollView: NSScrollView, documentView: NSView) -> (pageIndex: Int, fractionWithinPage: Double)? {
             guard let pdfView, let document = pdfView.document else { return nil }
+            ensurePageLayoutCache()
 
             let visibleRect = scrollView.contentView.bounds
-            var best: (page: PDFPage, index: Int, intersectionHeight: CGFloat)?
-
-            for index in 0..<document.pageCount {
-                guard let page = document.page(at: index) else { continue }
-                let pageBounds = pdfView.convert(page.bounds(for: pdfView.displayBox), from: page)
-                let pageBoundsInDocumentView = documentView.convert(pageBounds, from: pdfView)
-                let intersection = visibleRect.intersection(pageBoundsInDocumentView)
-                guard !intersection.isNull, intersection.height > 0 else { continue }
-
-                if best == nil || intersection.height > (best?.intersectionHeight ?? 0) {
-                    best = (page, index, intersection.height)
+            var candidates: [PDFPageLayout] = []
+            if let index = layoutIndex(containingY: visibleRect.midY) {
+                let lower = max(0, index - 2)
+                let upper = min(pageLayoutCache.count - 1, index + 2)
+                candidates = Array(pageLayoutCache[lower...upper])
+            } else {
+                candidates = pageLayoutCache.filter { layout in
+                    layout.frame.intersects(visibleRect)
                 }
             }
 
+            let best = candidates
+                .map { layout in (layout: layout, intersection: visibleRect.intersection(layout.frame)) }
+                .filter { !$0.intersection.isNull && $0.intersection.height > 0 }
+                .max { $0.intersection.height < $1.intersection.height }?.layout
+
             if let best {
-                let yInDocumentView = min(max(visibleRect.midY, documentView.convert(pdfView.convert(best.page.bounds(for: pdfView.displayBox), from: best.page), from: pdfView).minY), documentView.convert(pdfView.convert(best.page.bounds(for: pdfView.displayBox), from: best.page), from: pdfView).maxY)
+                let yInDocumentView = min(max(visibleRect.midY, best.frame.minY), best.frame.maxY)
                 let pointInPDFView = pdfView.convert(NSPoint(x: visibleRect.midX, y: yInDocumentView), from: documentView)
                 let centerOnPage = pdfView.convert(pointInPDFView, to: best.page)
                 let pageBounds = best.page.bounds(for: pdfView.displayBox)
                 let fractionFromTop = SyncMapper.clamp(Double((pageBounds.maxY - centerOnPage.y) / max(1, pageBounds.height)))
-                return (best.index, fractionFromTop)
+                return (best.pageIndex, fractionFromTop)
             }
 
             if let page = pdfView.currentPage {
@@ -303,6 +357,52 @@ struct PDFReaderView: NSViewRepresentable {
             }
 
             return nil
+        }
+
+        private func layoutIndex(containingY y: CGFloat) -> Int? {
+            guard !pageLayoutCache.isEmpty else { return nil }
+            var low = 0
+            var high = pageLayoutCache.count - 1
+            while low <= high {
+                let mid = (low + high) / 2
+                let frame = pageLayoutCache[mid].frame
+                if y < frame.minY {
+                    high = mid - 1
+                } else if y > frame.maxY {
+                    low = mid + 1
+                } else {
+                    return mid
+                }
+            }
+            return min(max(0, low), pageLayoutCache.count - 1)
+        }
+
+        private func pageWindow(centeredAt pageNumber: Int, pageCount: Int, radius: Int) -> [Int] {
+            let start = max(1, pageNumber - radius)
+            let end = min(pageCount, pageNumber + radius)
+            guard start <= end else { return [] }
+            return Array(start...end)
+        }
+
+        private func scheduleAnchorBatches(pageCount: Int, generation: Int) {
+            guard pageCount > 0 else { return }
+            let batchSize = 50
+            var nextEnd = 0
+
+            func sendNextBatch() {
+                guard generation == anchorBatchGeneration else { return }
+                nextEnd = min(pageCount, nextEnd + batchSize)
+                onAnchorsChanged((1...nextEnd).map(PositionAnchor.pdfPage))
+                if nextEnd < pageCount {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                        sendNextBatch()
+                    }
+                }
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                sendNextBatch()
+            }
         }
 
         private func pageNumber(from anchor: PositionAnchor) -> Int? {
@@ -321,6 +421,59 @@ struct PDFReaderView: NSViewRepresentable {
                 guard let self, self.suppressionGeneration == generation else { return }
                 self.isApplyingScroll = false
             }
+        }
+
+        /// Extracts text from the currently visible PDF pages using PDFKit's
+        /// native text layer. This is more reliable than OCR for text-based PDFs
+        /// and inherently supports all languages embedded in the PDF.
+        private func extractVisiblePagesText() -> String? {
+            guard let pdfView,
+                  pdfView.document != nil,
+                  let scrollView = pdfView.documentView?.enclosingScrollView,
+                  let documentView = scrollView.documentView
+            else { return nil }
+
+            let visibleRect = scrollView.contentView.bounds
+            guard visibleRect.width > 0, visibleRect.height > 0 else { return nil }
+
+            ensurePageLayoutCache()
+
+            // Collect text from every page whose frame intersects the visible rect.
+            var parts: [String] = []
+            for layout in pageLayoutCache {
+                guard layout.frame.intersects(visibleRect) else { continue }
+                let page = layout.page
+
+                // Convert visible rect into page coordinate space and try
+                // extracting only the text within the visible portion.
+                let visibleInPDFView = pdfView.convert(visibleRect, from: documentView)
+                let visibleOnPage = pdfView.convert(visibleInPDFView, to: page)
+                let pageBounds = page.bounds(for: pdfView.displayBox)
+                let clipped = visibleOnPage.intersection(pageBounds)
+
+                if !clipped.isNull, clipped.width > 0, clipped.height > 0,
+                   let selection = page.selection(for: clipped) {
+                    if let text = selection.string,
+                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        parts.append(text)
+                        continue
+                    }
+                }
+
+                // Fall back to the entire page string if selection-based
+                // extraction returns nothing (can happen with some PDF encodings).
+                if let fullText = page.string,
+                   !fullText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    parts.append(fullText)
+                }
+            }
+
+            let result = parts
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n\n")
+
+            return result.isEmpty ? nil : result
         }
 
         private func captureVisibleJPEG() -> Data? {

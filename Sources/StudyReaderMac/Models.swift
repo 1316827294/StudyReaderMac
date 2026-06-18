@@ -42,6 +42,11 @@ struct PositionAnchor: Codable, Equatable {
         let bucket = Int((SyncMapper.clamp(fraction) * 100).rounded())
         return PositionAnchor(key: "scroll-\(bucket)", label: "Position \(bucket)%")
     }
+
+    static func epubChapter(_ chapterNumber: Int) -> PositionAnchor {
+        let safeChapter = max(1, chapterNumber)
+        return PositionAnchor(key: "epub-chapter-\(safeChapter)", label: "Chapter \(safeChapter)")
+    }
 }
 
 struct AnswerBlock: Identifiable, Equatable {
@@ -114,22 +119,31 @@ struct AnalysisRecord: Codable, Identifiable, Equatable {
 
 struct DocumentSession: Codable, Equatable {
     var documentPath: String
+    var documentKind: DocumentKind?
     var answerText: String
     var answersByAnchor: [String: String]
+    var feedbackByAnchor: [String: String]
     var lastReadingFraction: Double
+    var lastOpenedAt: Date
     var history: [AnalysisRecord]
 
     init(
         documentPath: String,
+        documentKind: DocumentKind? = nil,
         answerText: String = "",
         answersByAnchor: [String: String] = [:],
+        feedbackByAnchor: [String: String] = [:],
         lastReadingFraction: Double = 0,
+        lastOpenedAt: Date = Date(),
         history: [AnalysisRecord] = []
     ) {
         self.documentPath = documentPath
+        self.documentKind = documentKind
         self.answerText = answerText
         self.answersByAnchor = answersByAnchor
+        self.feedbackByAnchor = feedbackByAnchor
         self.lastReadingFraction = SyncMapper.clamp(lastReadingFraction)
+        self.lastOpenedAt = lastOpenedAt
         self.history = history
     }
 
@@ -143,10 +157,83 @@ struct DocumentSession: Codable, Equatable {
             answerText = answer
         }
     }
+
+    func feedback(for anchor: PositionAnchor) -> String {
+        feedbackByAnchor[anchor.key] ?? ""
+    }
+
+    mutating func setFeedback(_ feedback: String, for anchor: PositionAnchor) {
+        feedbackByAnchor[anchor.key] = feedback
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case documentPath
+        case documentKind
+        case answerText
+        case answersByAnchor
+        case feedbackByAnchor
+        case lastReadingFraction
+        case lastOpenedAt
+        case history
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        documentPath = try container.decode(String.self, forKey: .documentPath)
+        documentKind = try container.decodeIfPresent(DocumentKind.self, forKey: .documentKind)
+        answerText = try container.decodeIfPresent(String.self, forKey: .answerText) ?? ""
+        answersByAnchor = try container.decodeIfPresent([String: String].self, forKey: .answersByAnchor) ?? [:]
+        feedbackByAnchor = try container.decodeIfPresent([String: String].self, forKey: .feedbackByAnchor) ?? [:]
+        lastReadingFraction = SyncMapper.clamp(
+            try container.decodeIfPresent(Double.self, forKey: .lastReadingFraction) ?? 0
+        )
+        lastOpenedAt = try container.decodeIfPresent(Date.self, forKey: .lastOpenedAt) ?? Date.distantPast
+        history = try container.decodeIfPresent([AnalysisRecord].self, forKey: .history) ?? []
+    }
+}
+
+struct RecentBook: Identifiable, Equatable {
+    var session: DocumentSession
+
+    var id: String { session.documentPath }
+    var url: URL { URL(fileURLWithPath: session.documentPath) }
+    var title: String { url.lastPathComponent }
+    var kind: DocumentKind? { session.documentKind ?? DocumentKind(url: url) }
+    var lastOpenedAt: Date { session.lastOpenedAt }
+    var readingFraction: Double { session.lastReadingFraction }
+    var isAvailable: Bool { FileManager.default.fileExists(atPath: session.documentPath) }
+}
+
+enum FeedbackFormatter {
+    static func appendSelectionFeedback(existing: String, selectedText: String, feedback: String) -> String {
+        let excerpt = selectedText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+        let safeExcerpt = String(excerpt.prefix(180))
+        let block = """
+        ### Selected text check
+        > \(safeExcerpt)
+
+        \(feedback.trimmingCharacters(in: .whitespacesAndNewlines))
+        """
+
+        let trimmedExisting = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedExisting.isEmpty {
+            return block
+        }
+        return """
+        \(trimmedExisting)
+
+        ---
+
+        \(block)
+        """
+    }
 }
 
 final class DocumentViewport {
     var captureJPEG: (() async -> Data?)?
+    var captureReadingText: (() async -> String?)?
     var scrollToFraction: ((Double) -> Void)?
 }
 
@@ -158,6 +245,7 @@ enum StudyReaderError: LocalizedError {
     case unsupportedDocument
     case missingAPIKey
     case missingDocumentCapture
+    case missingRecognizedText
     case emptyAnswer
     case epubExtractionFailed(String)
     case openAIResponseMissingText
@@ -171,6 +259,8 @@ enum StudyReaderError: LocalizedError {
             "Add your OpenAI API key in Settings first."
         case .missingDocumentCapture:
             "Could not capture the current reading view."
+        case .missingRecognizedText:
+            "Could not recognize readable text from the current view."
         case .emptyAnswer:
             "Write an answer before checking."
         case .epubExtractionFailed(let message):
@@ -180,5 +270,31 @@ enum StudyReaderError: LocalizedError {
         case .serverError(let message):
             message
         }
+    }
+}
+
+extension NSColor {
+    convenience init?(studyReaderHex hex: String) {
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespacesAndNewlines))
+        guard value.count == 6,
+              let raw = Int(value, radix: 16)
+        else {
+            return nil
+        }
+
+        self.init(
+            red: CGFloat((raw >> 16) & 0xff) / 255.0,
+            green: CGFloat((raw >> 8) & 0xff) / 255.0,
+            blue: CGFloat(raw & 0xff) / 255.0,
+            alpha: 1
+        )
+    }
+
+    var studyReaderHexRGB: String? {
+        guard let color = usingColorSpace(.sRGB) else { return nil }
+        let red = Int(round(color.redComponent * 255))
+        let green = Int(round(color.greenComponent * 255))
+        let blue = Int(round(color.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", red, green, blue)
     }
 }
