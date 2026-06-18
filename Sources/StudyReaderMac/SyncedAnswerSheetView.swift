@@ -74,6 +74,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private var feedbackContainers: [String: NSView] = [:]
         private var feedbackTextViews: [String: NSTextView] = [:]
         private var selectionFeedbackMargins: [String: NSView] = [:]
+        private var selectionCheckButtons: [String: SelectionCheckButton] = [:]
         private var selectionFeedbackPanels: [String: [UUID: SelectionFeedbackPanelView]] = [:]
         private var selectionFeedbackBottoms: [String: CGFloat] = [:]
         private var selectionHintLabels: [ObjectIdentifier: NSTextField] = [:]
@@ -247,7 +248,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             label.textColor = .secondaryLabelColor
             label.translatesAutoresizingMaskIntoConstraints = false
 
-            let selectionHint = NSTextField(labelWithString: "Right-click to Check Selection")
+            let selectionHint = NSTextField(labelWithString: "")
             selectionHint.font = .systemFont(ofSize: 12, weight: .semibold)
             selectionHint.textColor = .controlAccentColor
             selectionHint.alignment = .right
@@ -299,6 +300,21 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             selectionFeedbackMargin.wantsLayer = true
             selectionFeedbackMargin.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
             selectionFeedbackMargins[block.anchor.key] = selectionFeedbackMargin
+
+            let selectionCheckButton = SelectionCheckButton()
+            selectionCheckButton.isHidden = true
+            selectionCheckButton.onPress = { [weak self, weak textView, weak selectionCheckButton] in
+                guard let self,
+                      let textView,
+                      let selection = textView.checkableSelection(),
+                      !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      let anchor = self.anchorsByTextView[ObjectIdentifier(textView)]
+                else { return }
+                selectionCheckButton?.isHidden = true
+                self.onSelectionCheckRequested(anchor, selection)
+            }
+            selectionFeedbackMargin.addSubview(selectionCheckButton)
+            selectionCheckButtons[block.anchor.key] = selectionCheckButton
 
             let feedbackContainer = NSView()
             feedbackContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -399,6 +415,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             feedbackContainers.removeAll()
             feedbackTextViews.removeAll()
             selectionFeedbackMargins.removeAll()
+            selectionCheckButtons.removeAll()
             for panelsByID in selectionFeedbackPanels.values {
                 panelsByID.values.forEach { $0.removeFromSuperview() }
             }
@@ -422,8 +439,48 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         }
 
         private func updateSelectionHint(for textView: PaperAnswerTextView) {
-            let hasSelection = !textView.checkableSelectedText().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            selectionHintLabels[ObjectIdentifier(textView)]?.isHidden = !hasSelection
+            selectionHintLabels[ObjectIdentifier(textView)]?.isHidden = true
+            updateSelectionCheckButton(for: textView)
+        }
+
+        private func updateSelectionCheckButton(for textView: PaperAnswerTextView) {
+            guard let anchor = anchorsByTextView[ObjectIdentifier(textView)],
+                  let margin = selectionFeedbackMargins[anchor.key],
+                  let button = selectionCheckButtons[anchor.key]
+            else { return }
+
+            guard let selection = textView.checkableSelection(),
+                  !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer
+            else {
+                button.isHidden = true
+                return
+            }
+
+            layoutManager.ensureLayout(for: textContainer)
+            guard let anchorY = selectionAnchorY(
+                for: NSRange(location: selection.rangeLocation, length: selection.rangeLength),
+                textView: textView,
+                margin: margin,
+                layoutManager: layoutManager,
+                textContainer: textContainer
+            ) else {
+                button.isHidden = true
+                return
+            }
+
+            let buttonSize = button.fittingSize
+            let width = min(max(128, buttonSize.width), annotationColumnWidth - 16)
+            let height = max(28, buttonSize.height)
+            button.frame = NSRect(
+                x: 8,
+                y: max(0, anchorY),
+                width: width,
+                height: height
+            )
+            margin.addSubview(button, positioned: .above, relativeTo: nil)
+            button.isHidden = false
         }
 
         private func updateBlockStyle(for textView: NSTextView, isCurrent: Bool) {
@@ -562,6 +619,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             selectionFeedbackPanels[key] = panelsByID
             selectionFeedbackBottoms[key] = occupiedBottom
             layoutManager.ensureLayout(for: textContainer)
+            updateSelectionCheckButton(for: textView)
         }
 
         private func updateTextViewHeight(_ textView: NSTextView) {
@@ -607,11 +665,13 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             guard range.location != NSNotFound, range.length > 0 else { return nil }
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             guard glyphRange.length > 0 else { return nil }
-            let lastGlyphIndex = NSMaxRange(glyphRange) - 1
-            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: lastGlyphIndex, effectiveRange: nil)
+            let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
             let textOrigin = textContainerOrigin(for: textView)
-            let linePointInTextView = NSPoint(x: textOrigin.x, y: textOrigin.y + lineRect.minY)
-            return margin.convert(linePointInTextView, from: textView).y
+            let selectionTopInTextView = NSPoint(
+                x: textOrigin.x + selectionRect.minX,
+                y: textOrigin.y + selectionRect.minY
+            )
+            return margin.convert(selectionTopInTextView, from: textView).y
         }
 
         private func textContainerOrigin(for textView: NSTextView) -> NSPoint {
@@ -727,6 +787,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 if let textView = textViews[key],
                    let anchor = anchorsByTextView[ObjectIdentifier(textView)] {
                     updateSelectionFeedback(for: anchor, in: textView)
+                    updateSelectionCheckButton(for: textView)
                     updateTextViewHeight(textView)
                 }
             }
@@ -931,7 +992,7 @@ private final class PaperAnswerTextView: NSTextView {
         checkableSelection()?.text ?? ""
     }
 
-    private func checkableSelection() -> AnswerSelection? {
+    fileprivate func checkableSelection() -> AnswerSelection? {
         let selectedRanges = selectedRanges.map(\.rangeValue)
         guard !selectedRanges.isEmpty else { return nil }
         let nsString = string as NSString
@@ -948,6 +1009,31 @@ private final class PaperAnswerTextView: NSTextView {
 
 private final class SelectionFeedbackMarginView: NSView {
     override var isFlipped: Bool { true }
+}
+
+private final class SelectionCheckButton: NSButton {
+    var onPress: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        title = "Check Selection"
+        image = NSImage(systemSymbolName: "checkmark.seal", accessibilityDescription: "Check Selection")
+        imagePosition = .imageLeading
+        bezelStyle = .rounded
+        controlSize = .small
+        font = .systemFont(ofSize: 12, weight: .semibold)
+        contentTintColor = .controlAccentColor
+        target = self
+        action = #selector(press)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    @objc private func press() {
+        onPress?()
+    }
 }
 
 private final class SelectionFeedbackPanelView: NSView {
