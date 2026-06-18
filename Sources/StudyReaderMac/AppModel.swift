@@ -13,7 +13,7 @@ final class AppModel: ObservableObject {
     @Published var feedbackByAnchor: [String: String] = [:]
     @Published var selectionFeedbackByAnchor: [String: [SelectionFeedback]] = [:]
     @Published var restoredReadingFraction = 0.0
-    @Published var statusText = "Open a PDF or DRM-free EPUB to begin."
+    @Published var statusText = L10n.text("status.initial", language: InterfaceLanguagePreference.system.resolvedLanguage)
     @Published var isChecking = false
     @Published var showingSettings = false
     @Published var openAIEndpointURLString: String {
@@ -36,6 +36,18 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(feedbackAccentHex, forKey: "FeedbackAccentHex")
         }
     }
+    @Published var interfaceLanguagePreference: InterfaceLanguagePreference {
+        didSet {
+            UserDefaults.standard.set(interfaceLanguagePreference.rawValue, forKey: "InterfaceLanguagePreference")
+            statusText = localized("status.settingsSaved")
+        }
+    }
+    @Published var aiOutputLanguagePreference: AIOutputLanguagePreference {
+        didSet {
+            UserDefaults.standard.set(aiOutputLanguagePreference.rawValue, forKey: "AIOutputLanguagePreference")
+            statusText = localized("status.settingsSaved")
+        }
+    }
     @Published private(set) var history: [AnalysisRecord] = []
     @Published private(set) var recentBooks: [RecentBook] = []
 
@@ -54,7 +66,30 @@ final class AppModel: ObservableObject {
         modelName = UserDefaults.standard.string(forKey: "OpenAIModelName") ?? "gpt-5.5"
         apiKey = UserDefaults.standard.string(forKey: "OpenAIAPIKey") ?? ""
         feedbackAccentHex = UserDefaults.standard.string(forKey: "FeedbackAccentHex") ?? "#0A84FF"
+        interfaceLanguagePreference = InterfaceLanguagePreference(
+            rawValue: UserDefaults.standard.string(forKey: "InterfaceLanguagePreference") ?? ""
+        ) ?? .system
+        aiOutputLanguagePreference = AIOutputLanguagePreference(
+            rawValue: UserDefaults.standard.string(forKey: "AIOutputLanguagePreference") ?? ""
+        ) ?? .interface
+        statusText = L10n.text("status.initial", language: interfaceLanguage)
         recentBooks = sessionStore.recentBooks()
+    }
+
+    var interfaceLanguage: AppLanguage {
+        interfaceLanguagePreference.resolvedLanguage
+    }
+
+    var aiOutputLanguage: AppLanguage {
+        aiOutputLanguagePreference.resolvedLanguage(interfaceLanguage: interfaceLanguage)
+    }
+
+    func localized(_ key: String) -> String {
+        L10n.text(key, language: interfaceLanguage)
+    }
+
+    func localized(_ key: String, _ arguments: CVarArg...) -> String {
+        L10n.text(key, language: interfaceLanguage, arguments: arguments)
     }
 
     var feedbackAccentColor: NSColor {
@@ -90,13 +125,13 @@ final class AppModel: ObservableObject {
             }
             return true
         }
-        statusText = "Drop a PDF or DRM-free EPUB file."
+        statusText = localized("status.dropFile")
         return false
     }
 
     func loadDocument(_ url: URL) {
         guard let kind = DocumentKind(url: url) else {
-            statusText = StudyReaderError.unsupportedDocument.localizedDescription
+            statusText = localizedError(StudyReaderError.unsupportedDocument)
             return
         }
 
@@ -116,12 +151,12 @@ final class AppModel: ObservableObject {
         analysisText = session.history.last?.response ?? ""
         try? sessionStore.save(session)
         refreshRecentBooks()
-        statusText = "Opened \(url.lastPathComponent)."
+        statusText = localized("status.opened", url.lastPathComponent)
     }
 
     func openRecentBook(_ book: RecentBook) {
         guard book.isAvailable else {
-            statusText = "Could not open \(book.title). The file is missing."
+            statusText = localized("status.missingRecent", book.title)
             refreshRecentBooks()
             return
         }
@@ -135,9 +170,9 @@ final class AppModel: ObservableObject {
             if documentURL?.path == book.session.documentPath {
                 closeCurrentDocument()
             }
-            statusText = "Removed \(book.title) from history."
+            statusText = localized("status.removedRecent", book.title)
         } catch {
-            statusText = "Could not remove \(book.title): \(error.localizedDescription)"
+            statusText = localized("status.removeRecentFailed", book.title, error.localizedDescription)
         }
     }
 
@@ -293,13 +328,13 @@ final class AppModel: ObservableObject {
 
     func saveAPIKey(_ apiKey: String) {
         self.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        statusText = self.apiKey.isEmpty ? "API key cleared." : "OpenAI settings saved."
+        statusText = self.apiKey.isEmpty ? localized("status.apiKeyCleared") : localized("status.settingsSaved")
     }
 
     func runCheck(readingFraction: Double) {
         guard !isChecking else { return }
         guard let documentURL else {
-            statusText = "Open a document before checking."
+            statusText = localized("status.openBeforeChecking")
             return
         }
 
@@ -311,13 +346,13 @@ final class AppModel: ObservableObject {
     func runSelectionCheck(anchor: PositionAnchor, selection: AnswerSelection, readingFraction: Double) {
         guard !isChecking else { return }
         guard let documentURL else {
-            statusText = "Open a document before checking."
+            statusText = localized("status.openBeforeChecking")
             return
         }
 
         let trimmed = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            statusText = "Select answer text before checking."
+            statusText = localized("status.selectBeforeChecking")
             return
         }
 
@@ -337,7 +372,7 @@ final class AppModel: ObservableObject {
 
     private func checkDocument(documentURL: URL, readingFraction: Double) async {
         isChecking = true
-        statusText = "Recognizing visible reading text..."
+        statusText = localized("status.recognizing")
         defer { isChecking = false }
 
         do {
@@ -357,7 +392,7 @@ final class AppModel: ObservableObject {
                 throw StudyReaderError.missingRecognizedText
             }
 
-            statusText = "Sending recognized text and answer to OpenAI..."
+            statusText = localized("status.sendingAnswer")
             let feedback = try await client.editAnswer(
                 endpoint: resolvedOpenAIEndpoint,
                 apiKey: apiKey,
@@ -365,7 +400,8 @@ final class AppModel: ObservableObject {
                 answerText: answer,
                 readingText: readingText,
                 documentName: documentURL.lastPathComponent,
-                readingFraction: readingFraction
+                readingFraction: readingFraction,
+                outputLanguage: aiOutputLanguage
             )
 
             setFeedback(feedback, for: currentAnchor, readingFraction: readingFraction)
@@ -378,9 +414,9 @@ final class AppModel: ObservableObject {
             )
             history.append(record)
             saveSession(readingFraction: readingFraction)
-            statusText = "Check complete. AI feedback was added below the current answer."
+            statusText = localized("status.checkComplete")
         } catch {
-            statusText = error.localizedDescription
+            statusText = localizedError(error)
         }
     }
 
@@ -391,7 +427,7 @@ final class AppModel: ObservableObject {
         readingFraction: Double
     ) async {
         isChecking = true
-        statusText = "Recognizing visible reading text..."
+        statusText = localized("status.recognizing")
         defer { isChecking = false }
 
         do {
@@ -405,7 +441,7 @@ final class AppModel: ObservableObject {
                 throw StudyReaderError.missingRecognizedText
             }
 
-            statusText = "Sending recognized text and selected answer to OpenAI..."
+            statusText = localized("status.sendingSelection")
             let feedback = try await client.checkSelectedText(
                 endpoint: resolvedOpenAIEndpoint,
                 apiKey: apiKey,
@@ -413,7 +449,8 @@ final class AppModel: ObservableObject {
                 selectedText: selection.text,
                 readingText: readingText,
                 documentName: documentURL.lastPathComponent,
-                readingFraction: readingFraction
+                readingFraction: readingFraction,
+                outputLanguage: aiOutputLanguage
             )
 
             let item = SelectionFeedback(
@@ -436,9 +473,9 @@ final class AppModel: ObservableObject {
             )
             history.append(record)
             saveSession(readingFraction: readingFraction)
-            statusText = "Check complete. Selected text feedback was added."
+            statusText = localized("status.selectionCheckComplete")
         } catch {
-            statusText = error.localizedDescription
+            statusText = localizedError(error)
         }
     }
 
@@ -498,16 +535,32 @@ final class AppModel: ObservableObject {
     }
 
     private func label(forAnchorKey key: String) -> String {
-        if key.hasPrefix("pdf-page-"), let number = Int(key.replacingOccurrences(of: "pdf-page-", with: "")) {
-            return "Page \(number)"
+        let anchor = PositionAnchor(key: key, label: key)
+        return anchor.localizedLabel(language: interfaceLanguage)
+    }
+
+    private func localizedError(_ error: Error) -> String {
+        guard let studyReaderError = error as? StudyReaderError else {
+            return error.localizedDescription
         }
-        if key.hasPrefix("scroll-"), let number = Int(key.replacingOccurrences(of: "scroll-", with: "")) {
-            return "Position \(number)%"
+        switch studyReaderError {
+        case .unsupportedDocument:
+            return localized("error.unsupportedDocument")
+        case .missingAPIKey:
+            return localized("error.missingAPIKey")
+        case .missingDocumentCapture:
+            return localized("error.missingDocumentCapture")
+        case .missingRecognizedText:
+            return localized("error.missingRecognizedText")
+        case .emptyAnswer:
+            return localized("error.emptyAnswer")
+        case .epubExtractionFailed(let message):
+            return localized("error.epubExtractionFailed", message)
+        case .openAIResponseMissingText:
+            return localized("error.openAIResponseMissingText")
+        case .serverError(let message):
+            return message
         }
-        if key.hasPrefix("epub-chapter-"), let number = Int(key.replacingOccurrences(of: "epub-chapter-", with: "")) {
-            return "Chapter \(number)"
-        }
-        return key
     }
 
     private func anchorSortValue(_ anchor: PositionAnchor) -> Int {

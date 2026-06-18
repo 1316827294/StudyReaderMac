@@ -6,6 +6,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
     var feedbackByAnchor: [String: String]
     var selectionFeedbackByAnchor: [String: [SelectionFeedback]]
     var feedbackAccentColor: NSColor
+    var interfaceLanguage: AppLanguage
     var currentAnchor: PositionAnchor
     var scrollTarget: AnswerScrollTarget
     var pageHeights: [String: CGFloat]
@@ -19,6 +20,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             feedbackByAnchor: feedbackByAnchor,
             selectionFeedbackByAnchor: selectionFeedbackByAnchor,
             feedbackAccentColor: feedbackAccentColor,
+            interfaceLanguage: interfaceLanguage,
             onTextChanged: onTextChanged,
             onScrollTargetChanged: onScrollTargetChanged,
             onSelectionCheckRequested: onSelectionCheckRequested,
@@ -52,6 +54,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         context.coordinator.feedbackByAnchor = feedbackByAnchor
         context.coordinator.selectionFeedbackByAnchor = selectionFeedbackByAnchor
         context.coordinator.feedbackAccentColor = feedbackAccentColor
+        context.coordinator.setInterfaceLanguage(interfaceLanguage)
         context.coordinator.beginUpdate(for: scrollTarget)
         context.coordinator.update(blocks: blocks, currentAnchor: currentAnchor, pageHeights: pageHeights)
         context.coordinator.applyScrollTarget(scrollTarget)
@@ -62,6 +65,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         var feedbackByAnchor: [String: String]
         var selectionFeedbackByAnchor: [String: [SelectionFeedback]]
         var feedbackAccentColor: NSColor
+        var interfaceLanguage: AppLanguage
         var onTextChanged: (PositionAnchor, String) -> Void
         var onScrollTargetChanged: (AnswerScrollTarget) -> Void
         var onSelectionCheckRequested: (PositionAnchor, AnswerSelection) -> Void
@@ -105,6 +109,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             feedbackByAnchor: [String: String],
             selectionFeedbackByAnchor: [String: [SelectionFeedback]],
             feedbackAccentColor: NSColor,
+            interfaceLanguage: AppLanguage,
             onTextChanged: @escaping (PositionAnchor, String) -> Void,
             onScrollTargetChanged: @escaping (AnswerScrollTarget) -> Void,
             onSelectionCheckRequested: @escaping (PositionAnchor, AnswerSelection) -> Void,
@@ -113,10 +118,31 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             self.feedbackByAnchor = feedbackByAnchor
             self.selectionFeedbackByAnchor = selectionFeedbackByAnchor
             self.feedbackAccentColor = feedbackAccentColor
+            self.interfaceLanguage = interfaceLanguage
             self.onTextChanged = onTextChanged
             self.onScrollTargetChanged = onScrollTargetChanged
             self.onSelectionCheckRequested = onSelectionCheckRequested
             self.onSelectionFeedbackCollapseChanged = onSelectionFeedbackCollapseChanged
+        }
+
+        func setInterfaceLanguage(_ language: AppLanguage) {
+            guard interfaceLanguage != language else { return }
+            interfaceLanguage = language
+            selectionFeedbackSignatures.removeAll()
+            for textView in textViews.values {
+                textView.interfaceLanguage = language
+            }
+            for button in selectionCheckButtons.values {
+                button.configure(language: language)
+            }
+            for key in feedbackContainers.keys {
+                updateFeedback(for: PositionAnchor(key: key, label: key))
+            }
+            for panelsByID in selectionFeedbackPanels.values {
+                for panel in panelsByID.values {
+                    panel.configureLanguage(language)
+                }
+            }
         }
 
         deinit {
@@ -168,6 +194,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                     applyPlainTextDefaults(to: textView, normalizeStorage: true)
                 }
                 applyPlainTextDefaults(to: textView, normalizeStorage: !isEditingThisBlock)
+                updateBlockLabel(for: block.anchor)
                 updateFeedback(for: block.anchor)
                 updateSelectionFeedback(for: block.anchor, in: textView)
                 updateTextViewHeight(textView)
@@ -243,7 +270,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             container.layer?.cornerRadius = 0
             container.layer?.borderWidth = 0
 
-            let label = NSTextField(labelWithString: block.anchor.label)
+            let label = NSTextField(labelWithString: block.anchor.localizedLabel(language: interfaceLanguage))
             label.font = .systemFont(ofSize: 12, weight: .medium)
             label.textColor = .secondaryLabelColor
             label.translatesAutoresizingMaskIntoConstraints = false
@@ -265,6 +292,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
             let textView = PaperAnswerTextView()
             textView.sheetScrollView = scrollView as? AnswerScrollView
+            textView.interfaceLanguage = interfaceLanguage
             textView.onCheckSelection = { [weak self, weak textView] selection in
                 guard let self,
                       let textView,
@@ -302,6 +330,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             selectionFeedbackMargins[block.anchor.key] = selectionFeedbackMargin
 
             let selectionCheckButton = SelectionCheckButton()
+            selectionCheckButton.configure(language: interfaceLanguage)
             selectionCheckButton.isHidden = true
             selectionCheckButton.onPress = { [weak self, weak textView, weak selectionCheckButton] in
                 guard let self,
@@ -322,7 +351,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             feedbackContainer.layer?.cornerRadius = 8
             feedbackContainer.layer?.borderWidth = 1
 
-            let feedbackLabel = NSTextField(labelWithString: "AI Feedback")
+            let feedbackLabel = NSTextField(labelWithString: L10n.text("answer.aiFeedback", language: interfaceLanguage))
             feedbackLabel.font = .systemFont(ofSize: 12, weight: .semibold)
             feedbackLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -490,6 +519,11 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 : NSColor.textBackgroundColor.cgColor
         }
 
+        private func updateBlockLabel(for anchor: PositionAnchor) {
+            guard let label = blockViews[anchor.key]?.subviews.compactMap({ $0 as? NSTextField }).first else { return }
+            label.stringValue = anchor.localizedLabel(language: interfaceLanguage)
+        }
+
         private func applyPlainTextDefaults(to textView: NSTextView, normalizeStorage: Bool) {
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.lineBreakMode = .byWordWrapping
@@ -523,6 +557,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             feedbackContainer.layer?.borderColor = feedbackAccentColor.withAlphaComponent(0.45).cgColor
 
             if let label = feedbackContainer.subviews.compactMap({ $0 as? NSTextField }).first {
+                label.stringValue = L10n.text("answer.aiFeedback", language: interfaceLanguage)
                 label.textColor = feedbackAccentColor
             }
 
@@ -607,6 +642,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                     item: item,
                     anchorKey: key,
                     accentColor: feedbackAccentColor,
+                    language: interfaceLanguage,
                     attributedFeedback: attributedMarkdown(item.feedback, accentColor: feedbackAccentColor)
                 ) { [weak self] id, isCollapsed in
                     self?.onSelectionFeedbackCollapseChanged(anchor, id, isCollapsed)
@@ -936,6 +972,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 private final class PaperAnswerTextView: NSTextView {
     weak var sheetScrollView: AnswerScrollView?
     var minimumPaperHeight: CGFloat = 620
+    var interfaceLanguage: AppLanguage = .english
     var onCheckSelection: ((AnswerSelection) -> Void)?
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -947,10 +984,11 @@ private final class PaperAnswerTextView: NSTextView {
         if menu.items.first?.isSeparatorItem == false {
             menu.insertItem(.separator(), at: 0)
         }
-        let item = NSMenuItem(title: "Check Selection", action: #selector(checkSelectionFromMenu(_:)), keyEquivalent: "")
-        item.image = NSImage(systemSymbolName: "checkmark.seal", accessibilityDescription: "Check Selection")
+        let title = L10n.text("answer.checkSelection", language: interfaceLanguage)
+        let item = NSMenuItem(title: title, action: #selector(checkSelectionFromMenu(_:)), keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: "checkmark.seal", accessibilityDescription: title)
         item.attributedTitle = NSAttributedString(
-            string: "Check Selection",
+            string: title,
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold),
                 .foregroundColor: NSColor.controlAccentColor
@@ -1016,8 +1054,7 @@ private final class SelectionCheckButton: NSButton {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        title = "Check Selection"
-        image = NSImage(systemSymbolName: "checkmark.seal", accessibilityDescription: "Check Selection")
+        configure(language: .english)
         imagePosition = .imageLeading
         bezelStyle = .rounded
         controlSize = .small
@@ -1034,11 +1071,17 @@ private final class SelectionCheckButton: NSButton {
     @objc private func press() {
         onPress?()
     }
+
+    func configure(language: AppLanguage) {
+        let localizedTitle = L10n.text("answer.checkSelection", language: language)
+        title = localizedTitle
+        image = NSImage(systemSymbolName: "checkmark.seal", accessibilityDescription: localizedTitle)
+    }
 }
 
 private final class SelectionFeedbackPanelView: NSView {
     private let toggleButton = NSButton()
-    private let titleLabel = NSTextField(labelWithString: "AI Feedback - Selection")
+    private let titleLabel = NSTextField(labelWithString: "")
     private let excerptLabel = NSTextField(labelWithString: "")
     private let feedbackTextView = NSTextView()
     private var itemID: UUID?
@@ -1113,6 +1156,7 @@ private final class SelectionFeedbackPanelView: NSView {
         item: SelectionFeedback,
         anchorKey: String,
         accentColor: NSColor,
+        language: AppLanguage,
         attributedFeedback: NSAttributedString,
         onToggle: @escaping (UUID, Bool) -> Void
     ) {
@@ -1123,17 +1167,26 @@ private final class SelectionFeedbackPanelView: NSView {
 
         layer?.backgroundColor = accentColor.withAlphaComponent(0.06).cgColor
         layer?.borderColor = accentColor.withAlphaComponent(0.45).cgColor
+        configureLanguage(language)
         titleLabel.textColor = accentColor
         toggleButton.contentTintColor = accentColor
+        let toggleDescription = L10n.text(
+            item.isCollapsed ? "answer.expandFeedback" : "answer.collapseFeedback",
+            language: language
+        )
         toggleButton.image = NSImage(
             systemSymbolName: item.isCollapsed ? "chevron.right" : "chevron.down",
-            accessibilityDescription: item.isCollapsed ? "Expand feedback" : "Collapse feedback"
+            accessibilityDescription: toggleDescription
         )
         excerptLabel.stringValue = item.selectedText
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         feedbackTextView.isHidden = item.isCollapsed
         feedbackTextView.textStorage?.setAttributedString(attributedFeedback)
+    }
+
+    func configureLanguage(_ language: AppLanguage) {
+        titleLabel.stringValue = L10n.text("answer.aiFeedbackSelection", language: language)
     }
 
     @objc private func toggleCollapsed() {

@@ -112,6 +112,42 @@ final class ResponseEnvelopeTests: XCTestCase {
         XCTAssertFalse(prompt.localizedCaseInsensitiveContains("screenshot"))
     }
 
+    func testAnswerPromptUsesConfiguredEnglishOutputLanguage() {
+        let prompt = OpenAIClient.answerCheckPrompt(
+            readingText: "visible OCR text",
+            answerText: "learner answer",
+            documentName: "book.pdf",
+            readingFraction: 0.3,
+            outputLanguage: .english
+        )
+
+        XCTAssertTrue(prompt.contains("Return only concise English Markdown feedback."))
+        XCTAssertFalse(prompt.contains("Return only concise Simplified Chinese Markdown feedback."))
+    }
+
+    func testSelectedTextPromptUsesConfiguredChineseOutputLanguage() {
+        let prompt = OpenAIClient.selectedTextPrompt(
+            readingText: "visible OCR text",
+            selectedText: "selected answer",
+            documentName: "book.pdf",
+            readingFraction: 0.42,
+            outputLanguage: .simplifiedChinese
+        )
+
+        XCTAssertTrue(prompt.contains("Return only concise Simplified Chinese Markdown feedback."))
+    }
+
+    func testAIOutputLanguageCanFollowInterfaceLanguage() {
+        XCTAssertEqual(
+            AIOutputLanguagePreference.interface.resolvedLanguage(interfaceLanguage: .english),
+            .english
+        )
+        XCTAssertEqual(
+            AIOutputLanguagePreference.interface.resolvedLanguage(interfaceLanguage: .simplifiedChinese),
+            .simplifiedChinese
+        )
+    }
+
     // MARK: - Endpoint resolution
 
     func testResolvedEndpointFallsBackForEmptyOrInvalidValues() {

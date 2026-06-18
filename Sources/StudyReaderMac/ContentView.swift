@@ -61,7 +61,7 @@ struct ContentView: View {
             Button {
                 appModel.openDocument()
             } label: {
-                Label("Open", systemImage: "folder")
+                Label(appModel.localized("toolbar.open"), systemImage: "folder")
             }
             .buttonStyle(.bordered)
 
@@ -72,7 +72,7 @@ struct ContentView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Label("Check", systemImage: "checkmark.seal")
+                    Label(appModel.localized("toolbar.check"), systemImage: "checkmark.seal")
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -81,20 +81,20 @@ struct ContentView: View {
             Button {
                 appModel.showingSettings = true
             } label: {
-                Label("Settings", systemImage: "gearshape")
+                Label(appModel.localized("toolbar.settings"), systemImage: "gearshape")
             }
             .buttonStyle(.bordered)
 
             Spacer()
 
-            Text("v0.36 Selection Check")
+            Text(appModel.localized("toolbar.version"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(.quaternary, in: Capsule())
 
-            Text(appModel.documentURL?.lastPathComponent ?? "No document")
+            Text(appModel.documentURL?.lastPathComponent ?? appModel.localized("toolbar.noDocument"))
                 .lineLimit(1)
                 .foregroundStyle(.secondary)
         }
@@ -110,7 +110,7 @@ struct ContentView: View {
             Text("\(Int(syncFraction * 100))%")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-            Text(appModel.currentAnchor.label)
+            Text(appModel.currentAnchor.localizedLabel(language: appModel.interfaceLanguage))
                 .foregroundStyle(.secondary)
         }
         .font(.footnote)
@@ -129,7 +129,7 @@ private struct DocumentPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            paneHeader("Reading", systemImage: "book")
+            paneHeader(appModel.localized("pane.reading"), systemImage: "book")
 
             Group {
                 switch appModel.documentKind {
@@ -170,12 +170,13 @@ private struct AnswerPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            paneHeader("Answer Sheet - \(currentAnchor.label)", systemImage: "keyboard")
+            paneHeader(appModel.localized("pane.answerSheet", currentAnchor.localizedLabel(language: appModel.interfaceLanguage)), systemImage: "keyboard")
             SyncedAnswerSheetView(
                 blocks: appModel.answerBlocks,
                 feedbackByAnchor: appModel.feedbackByAnchor,
                 selectionFeedbackByAnchor: appModel.selectionFeedbackByAnchor,
                 feedbackAccentColor: appModel.feedbackAccentColor,
+                interfaceLanguage: appModel.interfaceLanguage,
                 currentAnchor: currentAnchor,
                 scrollTarget: answerScrollTarget,
                 pageHeights: appModel.documentKind == .pdf ? answerPageHeights : [:],
@@ -280,9 +281,9 @@ private struct EmptyDocumentView: View {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 54))
                     .foregroundStyle(.secondary)
-                Text("Open a PDF or DRM-free EPUB")
+                Text(appModel.localized("empty.openDocument"))
                     .font(.title3)
-                Text("Recent books appear here after you open them.")
+                Text(appModel.localized("empty.recentHint"))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: 420)
@@ -299,7 +300,7 @@ private struct EmptyDocumentView: View {
     private var recentBooks: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("Recent Books", systemImage: "clock")
+                Label(appModel.localized("empty.recentBooks"), systemImage: "clock")
                     .font(.headline)
                 Spacer()
             }
@@ -333,7 +334,7 @@ private struct RecentBookCard: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .help("Remove from history")
+                .help(appModel.localized("recent.remove"))
             }
 
             Text(book.title)
@@ -371,7 +372,7 @@ private struct RecentBookCard: View {
     }
 
     private var statusText: String {
-        guard book.isAvailable else { return "File missing" }
-        return "\(Int(book.readingFraction * 100))% read"
+        guard book.isAvailable else { return appModel.localized("recent.fileMissing") }
+        return appModel.localized("recent.percentRead", Int(book.readingFraction * 100))
     }
 }

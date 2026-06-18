@@ -8,60 +8,77 @@ struct SettingsView: View {
     @State private var apiKey = ""
     @State private var modelName = ""
     @State private var feedbackAccentColor = Color.accentColor
+    @State private var interfaceLanguagePreference = InterfaceLanguagePreference.system
+    @State private var aiOutputLanguagePreference = AIOutputLanguagePreference.interface
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Settings")
+                Text(appModel.localized("settings.title"))
                     .font(.title2.bold())
                 Spacer()
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("API Address")
+                Text(appModel.localized("settings.apiAddress"))
                     .font(.headline)
                 TextField(OpenAIClient.defaultEndpoint.absoluteString, text: $endpointURL)
                     .textFieldStyle(.roundedBorder)
-                Text("OpenAI Chat Completions, DeepSeek, Ollama, or any compatible endpoint.")
+                Text(appModel.localized("settings.apiAddressHelp"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Model")
+                Text(appModel.localized("settings.model"))
                     .font(.headline)
                 TextField("gpt-5.5", text: $modelName)
                     .textFieldStyle(.roundedBorder)
-                Text("Model name depends on your provider, e.g. gpt-4o, deepseek-chat, etc.")
+                Text(appModel.localized("settings.modelHelp"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("API Key")
+                Text(appModel.localized("settings.apiKey"))
                     .font(.headline)
                 SecureField("sk-...", text: $apiKey)
                     .textFieldStyle(.roundedBorder)
-                Text("Saved with the rest of the app settings and used only when you click Check.")
+                Text(appModel.localized("settings.apiKeyHelp"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("AI Feedback Color")
+                Text(appModel.localized("settings.feedbackColor"))
                     .font(.headline)
-                ColorPicker("Markdown feedback accent", selection: $feedbackAccentColor, supportsOpacity: false)
-                Text("Used for the AI feedback block and Markdown emphasis in the answer sheet.")
+                ColorPicker(appModel.localized("settings.feedbackColorPicker"), selection: $feedbackAccentColor, supportsOpacity: false)
+                Text(appModel.localized("settings.feedbackColorHelp"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text(appModel.localized("settings.language"))
+                    .font(.headline)
+                Picker(appModel.localized("settings.interfaceLanguage"), selection: $interfaceLanguagePreference) {
+                    Text(appModel.localized("settings.followSystem")).tag(InterfaceLanguagePreference.system)
+                    Text(appModel.localized("settings.english")).tag(InterfaceLanguagePreference.english)
+                    Text(appModel.localized("settings.simplifiedChinese")).tag(InterfaceLanguagePreference.simplifiedChinese)
+                }
+                Picker(appModel.localized("settings.aiOutputLanguage"), selection: $aiOutputLanguagePreference) {
+                    Text(appModel.localized("settings.followInterface")).tag(AIOutputLanguagePreference.interface)
+                    Text(appModel.localized("settings.english")).tag(AIOutputLanguagePreference.english)
+                    Text(appModel.localized("settings.simplifiedChinese")).tag(AIOutputLanguagePreference.simplifiedChinese)
+                }
+            }
+
             HStack {
-                Button("Cancel") {
+                Button(appModel.localized("settings.cancel")) {
                     dismiss()
                 }
                 Spacer()
-                Button("Save") {
+                Button(appModel.localized("settings.save")) {
                     let trimmedEndpoint = endpointURL.trimmingCharacters(in: .whitespacesAndNewlines)
                     appModel.openAIEndpointURLString = trimmedEndpoint.isEmpty
                         ? OpenAIClient.defaultEndpoint.absoluteString
@@ -70,6 +87,8 @@ struct SettingsView: View {
                         ? "gpt-5.5"
                         : modelName.trimmingCharacters(in: .whitespacesAndNewlines)
                     appModel.feedbackAccentHex = NSColor(feedbackAccentColor).studyReaderHexRGB ?? "#0A84FF"
+                    appModel.interfaceLanguagePreference = interfaceLanguagePreference
+                    appModel.aiOutputLanguagePreference = aiOutputLanguagePreference
                     appModel.saveAPIKey(apiKey)
                     dismiss()
                 }
@@ -83,6 +102,8 @@ struct SettingsView: View {
             apiKey = appModel.apiKeyForSettings()
             modelName = appModel.modelName
             feedbackAccentColor = Color(nsColor: appModel.feedbackAccentColor)
+            interfaceLanguagePreference = appModel.interfaceLanguagePreference
+            aiOutputLanguagePreference = appModel.aiOutputLanguagePreference
         }
     }
 }

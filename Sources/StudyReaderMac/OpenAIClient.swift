@@ -24,13 +24,15 @@ struct OpenAIClient {
         answerText: String,
         readingText: String,
         documentName: String,
-        readingFraction: Double
+        readingFraction: Double,
+        outputLanguage: AppLanguage
     ) async throws -> String {
         let prompt = Self.answerCheckPrompt(
             readingText: readingText,
             answerText: answerText,
             documentName: documentName,
-            readingFraction: readingFraction
+            readingFraction: readingFraction,
+            outputLanguage: outputLanguage
         )
 
         return try await sendTextPrompt(
@@ -48,13 +50,15 @@ struct OpenAIClient {
         selectedText: String,
         readingText: String,
         documentName: String,
-        readingFraction: Double
+        readingFraction: Double,
+        outputLanguage: AppLanguage
     ) async throws -> String {
         let prompt = Self.selectedTextPrompt(
             readingText: readingText,
             selectedText: selectedText,
             documentName: documentName,
-            readingFraction: readingFraction
+            readingFraction: readingFraction,
+            outputLanguage: outputLanguage
         )
         return try await sendTextPrompt(
             endpoint: endpoint,
@@ -68,7 +72,8 @@ struct OpenAIClient {
         readingText: String,
         answerText: String,
         documentName: String,
-        readingFraction: Double
+        readingFraction: Double,
+        outputLanguage: AppLanguage = .simplifiedChinese
     ) -> String {
         """
         You are reviewing a learner's answer for the visible reading material.
@@ -82,7 +87,7 @@ struct OpenAIClient {
         Current answer:
         \(answerText)
 
-        Return only concise Chinese Markdown feedback.
+        Return only concise \(outputLanguage.promptName) Markdown feedback.
         Focus on missing key points from the OCR text, misunderstandings to correct, and one improved version of the answer if useful.
         Use short Markdown sections or bullets. Do not use markdown fences or meta commentary.
         """
@@ -92,7 +97,8 @@ struct OpenAIClient {
         readingText: String,
         selectedText: String,
         documentName: String,
-        readingFraction: Double
+        readingFraction: Double,
+        outputLanguage: AppLanguage = .simplifiedChinese
     ) -> String {
         """
         You are checking only the selected part of a learner's answer against the visible reading material.
@@ -106,7 +112,7 @@ struct OpenAIClient {
         Selected text:
         \(selectedText)
 
-        Return only concise Chinese Markdown feedback.
+        Return only concise \(outputLanguage.promptName) Markdown feedback.
         Evaluate only the selected text, not the rest of the learner's answer.
         Focus on whether the selected text is accurate, missing key points, or needs correction based on the OCR text.
         Do not use markdown fences or meta commentary.
