@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var currentAnchor = PositionAnchor.start
     @Published var answerBlocks: [AnswerBlock] = []
     @Published var feedbackByAnchor: [String: String] = [:]
+    @Published var selectionFeedbackByAnchor: [String: [SelectionFeedback]] = [:]
     @Published var restoredReadingFraction = 0.0
     @Published var statusText = "Open a PDF or DRM-free EPUB to begin."
     @Published var isChecking = false
@@ -110,6 +111,7 @@ final class AppModel: ObservableObject {
         answerText = session.answer(for: currentAnchor)
         answerBlocks = makeAnswerBlocks(from: session, preferredAnchors: [currentAnchor])
         feedbackByAnchor = session.feedbackByAnchor
+        selectionFeedbackByAnchor = session.selectionFeedbackByAnchor
         history = session.history
         analysisText = session.history.last?.response ?? ""
         try? sessionStore.save(session)
@@ -229,6 +231,21 @@ final class AppModel: ObservableObject {
         saveSession(readingFraction: readingFraction)
     }
 
+    func setSelectionFeedbackCollapsed(
+        anchor: PositionAnchor,
+        id: UUID,
+        isCollapsed: Bool,
+        readingFraction: Double
+    ) {
+        guard var items = selectionFeedbackByAnchor[anchor.key],
+              let index = items.firstIndex(where: { $0.id == id })
+        else { return }
+
+        items[index].isCollapsed = isCollapsed
+        selectionFeedbackByAnchor[anchor.key] = items
+        saveSession(readingFraction: readingFraction)
+    }
+
     private func scheduleSessionSave(readingFraction: Double) {
         pendingReadingFraction = readingFraction
         pendingSaveTask?.cancel()
@@ -261,6 +278,7 @@ final class AppModel: ObservableObject {
         session.setAnswer(answerText, for: currentAnchor)
         session.answerText = answerText
         session.feedbackByAnchor = feedbackByAnchor
+        session.selectionFeedbackByAnchor = selectionFeedbackByAnchor
         session.lastReadingFraction = SyncMapper.clamp(readingFraction)
         session.history = history
         currentSession = session
@@ -290,14 +308,14 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func runSelectionCheck(anchor: PositionAnchor, selectedText: String, readingFraction: Double) {
+    func runSelectionCheck(anchor: PositionAnchor, selection: AnswerSelection, readingFraction: Double) {
         guard !isChecking else { return }
         guard let documentURL else {
             statusText = "Open a document before checking."
             return
         }
 
-        let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = selection.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             statusText = "Select answer text before checking."
             return
@@ -307,7 +325,11 @@ final class AppModel: ObservableObject {
             await checkSelectedText(
                 documentURL: documentURL,
                 anchor: anchor,
-                selectedText: trimmed,
+                selection: AnswerSelection(
+                    text: trimmed,
+                    rangeLocation: selection.rangeLocation,
+                    rangeLength: selection.rangeLength
+                ),
                 readingFraction: readingFraction
             )
         }
@@ -365,7 +387,7 @@ final class AppModel: ObservableObject {
     private func checkSelectedText(
         documentURL: URL,
         anchor: PositionAnchor,
-        selectedText: String,
+        selection: AnswerSelection,
         readingFraction: Double
     ) async {
         isChecking = true
@@ -388,24 +410,28 @@ final class AppModel: ObservableObject {
                 endpoint: resolvedOpenAIEndpoint,
                 apiKey: apiKey,
                 model: modelName,
-                selectedText: selectedText,
+                selectedText: selection.text,
                 readingText: readingText,
                 documentName: documentURL.lastPathComponent,
                 readingFraction: readingFraction
             )
 
-            let existing = feedbackByAnchor[anchor.key] ?? ""
-            let appended = FeedbackFormatter.appendSelectionFeedback(
-                existing: existing,
-                selectedText: selectedText,
-                feedback: feedback
+            let item = SelectionFeedback(
+                anchorKey: anchor.key,
+                selectedText: selection.text,
+                rangeLocation: selection.rangeLocation,
+                rangeLength: selection.rangeLength,
+                feedback: feedback,
+                isCollapsed: false
             )
-            setFeedback(appended, for: anchor, readingFraction: readingFraction)
-            analysisText = appended
+            var items = selectionFeedbackByAnchor[anchor.key] ?? []
+            items.append(item)
+            selectionFeedbackByAnchor[anchor.key] = items
+            analysisText = feedback
             let record = AnalysisRecord(
                 documentName: documentURL.lastPathComponent,
                 readingFraction: readingFraction,
-                answerExcerpt: String(selectedText.prefix(600)),
+                answerExcerpt: String(selection.text.prefix(600)),
                 response: feedback
             )
             history.append(record)
@@ -430,6 +456,7 @@ final class AppModel: ObservableObject {
         currentAnchor = .start
         answerBlocks = []
         feedbackByAnchor = [:]
+        selectionFeedbackByAnchor = [:]
         history = []
         restoredReadingFraction = 0
     }

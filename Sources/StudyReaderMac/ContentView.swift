@@ -174,6 +174,7 @@ private struct AnswerPane: View {
             SyncedAnswerSheetView(
                 blocks: appModel.answerBlocks,
                 feedbackByAnchor: appModel.feedbackByAnchor,
+                selectionFeedbackByAnchor: appModel.selectionFeedbackByAnchor,
                 feedbackAccentColor: appModel.feedbackAccentColor,
                 currentAnchor: currentAnchor,
                 scrollTarget: answerScrollTarget,
@@ -185,10 +186,18 @@ private struct AnswerPane: View {
                     answerScrollTarget = target
                     currentAnchor = target.anchor
                 },
-                onSelectionCheckRequested: { anchor, selectedText in
+                onSelectionCheckRequested: { anchor, selection in
                     appModel.runSelectionCheck(
                         anchor: anchor,
-                        selectedText: selectedText,
+                        selection: selection,
+                        readingFraction: syncFraction
+                    )
+                },
+                onSelectionFeedbackCollapseChanged: { anchor, id, isCollapsed in
+                    appModel.setSelectionFeedbackCollapsed(
+                        anchor: anchor,
+                        id: id,
+                        isCollapsed: isCollapsed,
                         readingFraction: syncFraction
                     )
                 }

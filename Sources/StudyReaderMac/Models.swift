@@ -56,6 +56,67 @@ struct AnswerBlock: Identifiable, Equatable {
     var id: String { anchor.key }
 }
 
+struct AnswerSelection: Codable, Equatable {
+    var text: String
+    var rangeLocation: Int
+    var rangeLength: Int
+
+    var range: NSRange {
+        NSRange(location: rangeLocation, length: rangeLength)
+    }
+}
+
+struct SelectionFeedback: Codable, Identifiable, Equatable {
+    var id: UUID
+    var anchorKey: String
+    var selectedText: String
+    var rangeLocation: Int
+    var rangeLength: Int
+    var feedback: String
+    var createdAt: Date
+    var isCollapsed: Bool
+
+    init(
+        id: UUID = UUID(),
+        anchorKey: String,
+        selectedText: String,
+        rangeLocation: Int,
+        rangeLength: Int,
+        feedback: String,
+        createdAt: Date = Date(),
+        isCollapsed: Bool = false
+    ) {
+        self.id = id
+        self.anchorKey = anchorKey
+        self.selectedText = selectedText
+        self.rangeLocation = rangeLocation
+        self.rangeLength = rangeLength
+        self.feedback = feedback
+        self.createdAt = createdAt
+        self.isCollapsed = isCollapsed
+    }
+
+    var selection: AnswerSelection {
+        AnswerSelection(text: selectedText, rangeLocation: rangeLocation, rangeLength: rangeLength)
+    }
+}
+
+enum SelectionFeedbackLocator {
+    static func resolvedRange(for feedback: SelectionFeedback, in text: String) -> NSRange? {
+        let nsText = text as NSString
+        let savedRange = NSRange(location: feedback.rangeLocation, length: feedback.rangeLength)
+        if savedRange.location >= 0,
+           savedRange.length > 0,
+           NSMaxRange(savedRange) <= nsText.length,
+           nsText.substring(with: savedRange) == feedback.selectedText {
+            return savedRange
+        }
+
+        let foundRange = nsText.range(of: feedback.selectedText)
+        return foundRange.location == NSNotFound ? nil : foundRange
+    }
+}
+
 struct AnswerScrollTarget: Equatable {
     var anchor: PositionAnchor
     var fractionWithinAnchor: Double
@@ -123,6 +184,7 @@ struct DocumentSession: Codable, Equatable {
     var answerText: String
     var answersByAnchor: [String: String]
     var feedbackByAnchor: [String: String]
+    var selectionFeedbackByAnchor: [String: [SelectionFeedback]]
     var lastReadingFraction: Double
     var lastOpenedAt: Date
     var history: [AnalysisRecord]
@@ -133,6 +195,7 @@ struct DocumentSession: Codable, Equatable {
         answerText: String = "",
         answersByAnchor: [String: String] = [:],
         feedbackByAnchor: [String: String] = [:],
+        selectionFeedbackByAnchor: [String: [SelectionFeedback]] = [:],
         lastReadingFraction: Double = 0,
         lastOpenedAt: Date = Date(),
         history: [AnalysisRecord] = []
@@ -142,6 +205,7 @@ struct DocumentSession: Codable, Equatable {
         self.answerText = answerText
         self.answersByAnchor = answersByAnchor
         self.feedbackByAnchor = feedbackByAnchor
+        self.selectionFeedbackByAnchor = selectionFeedbackByAnchor
         self.lastReadingFraction = SyncMapper.clamp(lastReadingFraction)
         self.lastOpenedAt = lastOpenedAt
         self.history = history
@@ -166,12 +230,19 @@ struct DocumentSession: Codable, Equatable {
         feedbackByAnchor[anchor.key] = feedback
     }
 
+    mutating func addSelectionFeedback(_ feedback: SelectionFeedback, for anchor: PositionAnchor) {
+        var items = selectionFeedbackByAnchor[anchor.key] ?? []
+        items.append(feedback)
+        selectionFeedbackByAnchor[anchor.key] = items
+    }
+
     private enum CodingKeys: String, CodingKey {
         case documentPath
         case documentKind
         case answerText
         case answersByAnchor
         case feedbackByAnchor
+        case selectionFeedbackByAnchor
         case lastReadingFraction
         case lastOpenedAt
         case history
@@ -184,6 +255,10 @@ struct DocumentSession: Codable, Equatable {
         answerText = try container.decodeIfPresent(String.self, forKey: .answerText) ?? ""
         answersByAnchor = try container.decodeIfPresent([String: String].self, forKey: .answersByAnchor) ?? [:]
         feedbackByAnchor = try container.decodeIfPresent([String: String].self, forKey: .feedbackByAnchor) ?? [:]
+        selectionFeedbackByAnchor = try container.decodeIfPresent(
+            [String: [SelectionFeedback]].self,
+            forKey: .selectionFeedbackByAnchor
+        ) ?? [:]
         lastReadingFraction = SyncMapper.clamp(
             try container.decodeIfPresent(Double.self, forKey: .lastReadingFraction) ?? 0
         )

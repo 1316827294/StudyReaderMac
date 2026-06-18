@@ -4,21 +4,25 @@ import SwiftUI
 struct SyncedAnswerSheetView: NSViewRepresentable {
     var blocks: [AnswerBlock]
     var feedbackByAnchor: [String: String]
+    var selectionFeedbackByAnchor: [String: [SelectionFeedback]]
     var feedbackAccentColor: NSColor
     var currentAnchor: PositionAnchor
     var scrollTarget: AnswerScrollTarget
     var pageHeights: [String: CGFloat]
     var onTextChanged: (PositionAnchor, String) -> Void
     var onScrollTargetChanged: (AnswerScrollTarget) -> Void
-    var onSelectionCheckRequested: (PositionAnchor, String) -> Void
+    var onSelectionCheckRequested: (PositionAnchor, AnswerSelection) -> Void
+    var onSelectionFeedbackCollapseChanged: (PositionAnchor, UUID, Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             feedbackByAnchor: feedbackByAnchor,
+            selectionFeedbackByAnchor: selectionFeedbackByAnchor,
             feedbackAccentColor: feedbackAccentColor,
             onTextChanged: onTextChanged,
             onScrollTargetChanged: onScrollTargetChanged,
-            onSelectionCheckRequested: onSelectionCheckRequested
+            onSelectionCheckRequested: onSelectionCheckRequested,
+            onSelectionFeedbackCollapseChanged: onSelectionFeedbackCollapseChanged
         )
     }
 
@@ -44,7 +48,9 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         context.coordinator.onTextChanged = onTextChanged
         context.coordinator.onScrollTargetChanged = onScrollTargetChanged
         context.coordinator.onSelectionCheckRequested = onSelectionCheckRequested
+        context.coordinator.onSelectionFeedbackCollapseChanged = onSelectionFeedbackCollapseChanged
         context.coordinator.feedbackByAnchor = feedbackByAnchor
+        context.coordinator.selectionFeedbackByAnchor = selectionFeedbackByAnchor
         context.coordinator.feedbackAccentColor = feedbackAccentColor
         context.coordinator.beginUpdate(for: scrollTarget)
         context.coordinator.update(blocks: blocks, currentAnchor: currentAnchor, pageHeights: pageHeights)
@@ -54,10 +60,12 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var feedbackByAnchor: [String: String]
+        var selectionFeedbackByAnchor: [String: [SelectionFeedback]]
         var feedbackAccentColor: NSColor
         var onTextChanged: (PositionAnchor, String) -> Void
         var onScrollTargetChanged: (AnswerScrollTarget) -> Void
-        var onSelectionCheckRequested: (PositionAnchor, String) -> Void
+        var onSelectionCheckRequested: (PositionAnchor, AnswerSelection) -> Void
+        var onSelectionFeedbackCollapseChanged: (PositionAnchor, UUID, Bool) -> Void
 
         private weak var scrollView: NSScrollView?
         private weak var documentView: AnswerDocumentView?
@@ -65,6 +73,9 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private var textViews: [String: PaperAnswerTextView] = [:]
         private var feedbackContainers: [String: NSView] = [:]
         private var feedbackTextViews: [String: NSTextView] = [:]
+        private var selectionFeedbackStacks: [String: NSStackView] = [:]
+        private var selectionFeedbackHeightConstraints: [String: NSLayoutConstraint] = [:]
+        private var selectionFeedbackHeights: [String: CGFloat] = [:]
         private var selectionHintLabels: [ObjectIdentifier: NSTextField] = [:]
         private var anchorsByTextView: [ObjectIdentifier: PositionAnchor] = [:]
         private var heightConstraints: [ObjectIdentifier: NSLayoutConstraint] = [:]
@@ -75,6 +86,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private var anchorIndexByKey: [String: Int] = [:]
         private var estimatedBlockHeights: [String: CGFloat] = [:]
         private var alignedBlockHeights: [String: CGFloat] = [:]
+        private var selectionFeedbackSignatures: [String: String] = [:]
         private var scrollObserver: NSObjectProtocol?
         private let pageMinimumHeight: CGFloat = 620
         private let blockChromeHeight: CGFloat = 50
@@ -87,16 +99,20 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
         init(
             feedbackByAnchor: [String: String],
+            selectionFeedbackByAnchor: [String: [SelectionFeedback]],
             feedbackAccentColor: NSColor,
             onTextChanged: @escaping (PositionAnchor, String) -> Void,
             onScrollTargetChanged: @escaping (AnswerScrollTarget) -> Void,
-            onSelectionCheckRequested: @escaping (PositionAnchor, String) -> Void
+            onSelectionCheckRequested: @escaping (PositionAnchor, AnswerSelection) -> Void,
+            onSelectionFeedbackCollapseChanged: @escaping (PositionAnchor, UUID, Bool) -> Void
         ) {
             self.feedbackByAnchor = feedbackByAnchor
+            self.selectionFeedbackByAnchor = selectionFeedbackByAnchor
             self.feedbackAccentColor = feedbackAccentColor
             self.onTextChanged = onTextChanged
             self.onScrollTargetChanged = onScrollTargetChanged
             self.onSelectionCheckRequested = onSelectionCheckRequested
+            self.onSelectionFeedbackCollapseChanged = onSelectionFeedbackCollapseChanged
         }
 
         deinit {
@@ -145,6 +161,10 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 textViews.removeAll()
                 feedbackContainers.removeAll()
                 feedbackTextViews.removeAll()
+                selectionFeedbackStacks.removeAll()
+                selectionFeedbackHeightConstraints.removeAll()
+                selectionFeedbackHeights.removeAll()
+                selectionFeedbackSignatures.removeAll()
                 selectionHintLabels.removeAll()
                 anchorsByTextView.removeAll()
                 heightConstraints.removeAll()
@@ -166,6 +186,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                     textView.string = block.text
                 }
                 updateFeedback(for: block.anchor)
+                updateSelectionFeedback(for: block.anchor, in: textView)
                 updateTextViewHeight(textView)
                 updateBlockStyle(for: textView, isCurrent: block.anchor.key == currentAnchor.key)
             }
@@ -238,12 +259,12 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
             let textView = PaperAnswerTextView()
             textView.sheetScrollView = scrollView as? AnswerScrollView
-            textView.onCheckSelection = { [weak self, weak textView] selectedText in
+            textView.onCheckSelection = { [weak self, weak textView] selection in
                 guard let self,
                       let textView,
                       let anchor = self.anchorsByTextView[ObjectIdentifier(textView)]
                 else { return }
-                self.onSelectionCheckRequested(anchor, selectedText)
+                self.onSelectionCheckRequested(anchor, selection)
             }
             textView.string = block.text
             textView.font = .systemFont(ofSize: 15)
@@ -272,6 +293,15 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             textViews[block.anchor.key] = textView
             anchorsByTextView[ObjectIdentifier(textView)] = block.anchor
             selectionHintLabels[ObjectIdentifier(textView)] = selectionHint
+
+            let selectionFeedbackStack = NSStackView()
+            selectionFeedbackStack.orientation = .vertical
+            selectionFeedbackStack.alignment = .leading
+            selectionFeedbackStack.distribution = .fill
+            selectionFeedbackStack.spacing = 8
+            selectionFeedbackStack.translatesAutoresizingMaskIntoConstraints = false
+            selectionFeedbackStack.isHidden = true
+            selectionFeedbackStacks[block.anchor.key] = selectionFeedbackStack
 
             let feedbackContainer = NSView()
             feedbackContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -304,11 +334,14 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             container.addSubview(selectionHint)
             container.addSubview(separator)
             container.addSubview(textView)
+            container.addSubview(selectionFeedbackStack)
             container.addSubview(feedbackContainer)
 
             let heightConstraint = textView.heightAnchor.constraint(equalToConstant: pageMinimumHeight)
             heightConstraint.priority = .defaultHigh
             heightConstraints[ObjectIdentifier(textView)] = heightConstraint
+            let selectionFeedbackHeightConstraint = selectionFeedbackStack.heightAnchor.constraint(equalToConstant: 0)
+            selectionFeedbackHeightConstraints[block.anchor.key] = selectionFeedbackHeightConstraint
             let feedbackHeightConstraint = feedbackContainer.heightAnchor.constraint(equalToConstant: 0)
             feedbackHeightConstraints[block.anchor.key] = feedbackHeightConstraint
 
@@ -330,7 +363,12 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                 heightConstraint,
 
-                feedbackContainer.topAnchor.constraint(equalTo: textView.bottomAnchor, constant: 0),
+                selectionFeedbackStack.topAnchor.constraint(equalTo: textView.bottomAnchor, constant: 0),
+                selectionFeedbackStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
+                selectionFeedbackStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
+                selectionFeedbackHeightConstraint,
+
+                feedbackContainer.topAnchor.constraint(equalTo: selectionFeedbackStack.bottomAnchor, constant: 8),
                 feedbackContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
                 feedbackContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -22),
                 feedbackContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -12),
@@ -396,6 +434,70 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             }
         }
 
+        private func updateSelectionFeedback(for anchor: PositionAnchor, in textView: PaperAnswerTextView) {
+            let key = anchor.key
+            guard let stack = selectionFeedbackStacks[key],
+                  let stackHeightConstraint = selectionFeedbackHeightConstraints[key]
+            else { return }
+
+            let items = (selectionFeedbackByAnchor[key] ?? [])
+                .sorted {
+                    if $0.rangeLocation == $1.rangeLocation {
+                        return $0.createdAt < $1.createdAt
+                    }
+                    return $0.rangeLocation < $1.rangeLocation
+                }
+            let panelWidth = max(220, textView.bounds.width - 44)
+            let signature = items
+                .map { "\($0.id.uuidString):\($0.rangeLocation):\($0.rangeLength):\($0.isCollapsed):\($0.feedback.hashValue):\(Int(panelWidth))" }
+                .joined(separator: "|")
+
+            if selectionFeedbackSignatures[key] == signature {
+                return
+            }
+            selectionFeedbackSignatures[key] = signature
+
+            for view in stack.arrangedSubviews {
+                stack.removeArrangedSubview(view)
+                view.removeFromSuperview()
+            }
+
+            guard !items.isEmpty else {
+                stack.isHidden = true
+                selectionFeedbackHeights[key] = 0
+                stackHeightConstraint.constant = 0
+                return
+            }
+
+            stack.isHidden = false
+            var totalHeight: CGFloat = 0
+            for item in items {
+                let panelHeight = selectionFeedbackHeight(for: item, width: panelWidth)
+                let panel = SelectionFeedbackPanelView()
+                panel.translatesAutoresizingMaskIntoConstraints = false
+                panel.configure(
+                    item: item,
+                    anchorKey: key,
+                    accentColor: feedbackAccentColor,
+                    attributedFeedback: attributedMarkdown(item.feedback, accentColor: feedbackAccentColor)
+                ) { [weak self] id, isCollapsed in
+                    self?.onSelectionFeedbackCollapseChanged(anchor, id, isCollapsed)
+                }
+                stack.addArrangedSubview(panel)
+                NSLayoutConstraint.activate([
+                    panel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+                    panel.heightAnchor.constraint(equalToConstant: panelHeight)
+                ])
+                totalHeight += panelHeight
+            }
+
+            totalHeight += CGFloat(max(0, items.count - 1)) * stack.spacing
+            selectionFeedbackHeights[key] = totalHeight
+            if abs(stackHeightConstraint.constant - totalHeight) > 1 {
+                stackHeightConstraint.constant = totalHeight
+            }
+        }
+
         private func updateTextViewHeight(_ textView: NSTextView) {
             guard let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer,
@@ -411,22 +513,28 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             let anchor = anchorsByTextView[ObjectIdentifier(textView)]
             let alignedBlockHeight = anchor.flatMap { alignedBlockHeights[$0.key] }
             let feedbackHeight = anchor.map { self.feedbackHeight(for: $0.key) } ?? 0
-            let nextHeight = alignedBlockHeight.map { max(1, $0 - blockChromeHeight) }
-                .map { max(120, $0 - feedbackHeight) }
-                ?? max(minimumVisiblePageHeight, ceil(usedHeight))
+            let selectionFeedbackHeight = anchor.map { self.selectionFeedbackHeight(for: $0.key) } ?? 0
+            let contentHeight = ceil(usedHeight)
+            let nextHeight = alignedBlockHeight
+                .map { max(max(120, $0 - blockChromeHeight - feedbackHeight - selectionFeedbackHeight), contentHeight) }
+                ?? max(minimumVisiblePageHeight, contentHeight)
             if abs(heightConstraint.constant - nextHeight) > 1 {
                 heightConstraint.constant = nextHeight
                 if let anchor {
-                    estimatedBlockHeights[anchor.key] = alignedBlockHeight ?? (nextHeight + blockChromeHeight + feedbackHeight)
+                    estimatedBlockHeights[anchor.key] = alignedBlockHeight ?? (nextHeight + blockChromeHeight + feedbackHeight + selectionFeedbackHeight)
                 }
                 layoutDisplayedBlocks()
             } else if let anchor {
-                estimatedBlockHeights[anchor.key] = alignedBlockHeight ?? (nextHeight + blockChromeHeight + feedbackHeight)
+                estimatedBlockHeights[anchor.key] = alignedBlockHeight ?? (nextHeight + blockChromeHeight + feedbackHeight + selectionFeedbackHeight)
             }
         }
 
         private func feedbackHeight(for key: String) -> CGFloat {
             feedbackHeights[key] ?? 0
+        }
+
+        private func selectionFeedbackHeight(for key: String) -> CGFloat {
+            selectionFeedbackHeights[key] ?? 0
         }
 
         private func feedbackHeight(for textView: NSTextView) -> CGFloat {
@@ -441,7 +549,24 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             let usedHeight = layoutManager.usedRect(for: textContainer).height
                 + textView.textContainerInset.height * 2
                 + 34
-            return min(360, max(82, ceil(usedHeight)))
+            return max(82, ceil(usedHeight))
+        }
+
+        private func selectionFeedbackHeight(for item: SelectionFeedback, width: CGFloat) -> CGFloat {
+            if item.isCollapsed {
+                return 54
+            }
+
+            let attributed = attributedMarkdown(item.feedback, accentColor: feedbackAccentColor)
+            let textStorage = NSTextStorage(attributedString: attributed)
+            let layoutManager = NSLayoutManager()
+            let textContainer = NSTextContainer(containerSize: NSSize(width: max(1, width - 24), height: .greatestFiniteMagnitude))
+            textContainer.lineFragmentPadding = 0
+            layoutManager.addTextContainer(textContainer)
+            textStorage.addLayoutManager(layoutManager)
+            layoutManager.ensureLayout(for: textContainer)
+            let usedHeight = layoutManager.usedRect(for: textContainer).height
+            return max(96, ceil(usedHeight) + 54)
         }
 
         private func attributedMarkdown(_ markdown: String, accentColor: NSColor) -> NSAttributedString {
@@ -533,7 +658,14 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             else {
                 return alignedBlockHeights[key] ?? estimatedBlockHeights[key] ?? defaultBlockHeight()
             }
-            return alignedBlockHeights[key] ?? (heightConstraint.constant + blockChromeHeight + feedbackHeight(for: key))
+            let measuredHeight = heightConstraint.constant
+                + blockChromeHeight
+                + selectionFeedbackHeight(for: key)
+                + feedbackHeight(for: key)
+            if let alignedHeight = alignedBlockHeights[key] {
+                return max(alignedHeight, measuredHeight)
+            }
+            return measuredHeight
         }
 
         private func defaultBlockHeight() -> CGFloat {
@@ -639,7 +771,7 @@ private final class PaperAnswerTextView: NSTextView {
     weak var sheetScrollView: AnswerScrollView?
     var minimumPaperHeight: CGFloat = 620
     var onSyntheticLineInserted: (() -> Void)?
-    var onCheckSelection: ((String) -> Void)?
+    var onCheckSelection: ((AnswerSelection) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         insertBlankLinesIfNeeded(for: event)
@@ -648,8 +780,9 @@ private final class PaperAnswerTextView: NSTextView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
-        let selected = checkableSelectedText().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !selected.isEmpty else { return menu }
+        guard let selection = checkableSelection(),
+              !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return menu }
 
         if menu.items.first?.isSeparatorItem == false {
             menu.insertItem(.separator(), at: 0)
@@ -669,9 +802,10 @@ private final class PaperAnswerTextView: NSTextView {
     }
 
     @objc private func checkSelectionFromMenu(_ sender: NSMenuItem) {
-        let selected = checkableSelectedText().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !selected.isEmpty else { return }
-        onCheckSelection?(selected)
+        guard let selection = checkableSelection(),
+              !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        onCheckSelection?(selection)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -714,13 +848,127 @@ private final class PaperAnswerTextView: NSTextView {
     }
 
     fileprivate func checkableSelectedText() -> String {
+        checkableSelection()?.text ?? ""
+    }
+
+    private func checkableSelection() -> AnswerSelection? {
         let selectedRanges = selectedRanges.map(\.rangeValue)
-        guard !selectedRanges.isEmpty else { return "" }
+        guard !selectedRanges.isEmpty else { return nil }
         let nsString = string as NSString
-        return selectedRanges
-            .filter { $0.length > 0 && NSMaxRange($0) <= nsString.length }
-            .map { nsString.substring(with: $0) }
-            .joined(separator: "\n")
+        guard let range = selectedRanges.first(where: { $0.length > 0 && NSMaxRange($0) <= nsString.length }) else {
+            return nil
+        }
+        return AnswerSelection(
+            text: nsString.substring(with: range),
+            rangeLocation: range.location,
+            rangeLength: range.length
+        )
+    }
+}
+
+private final class SelectionFeedbackPanelView: NSView {
+    private let toggleButton = NSButton()
+    private let titleLabel = NSTextField(labelWithString: "AI Feedback - Selection")
+    private let excerptLabel = NSTextField(labelWithString: "")
+    private let feedbackTextView = NSTextView()
+    private var itemID: UUID?
+    private var isCollapsed = false
+    private var onToggle: ((UUID, Bool) -> Void)?
+
+    var anchorKey = ""
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 1
+
+        toggleButton.bezelStyle = .inline
+        toggleButton.isBordered = false
+        toggleButton.target = self
+        toggleButton.action = #selector(toggleCollapsed)
+        toggleButton.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        excerptLabel.font = .systemFont(ofSize: 11)
+        excerptLabel.textColor = .secondaryLabelColor
+        excerptLabel.lineBreakMode = .byTruncatingTail
+        excerptLabel.maximumNumberOfLines = 1
+        excerptLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        feedbackTextView.isEditable = false
+        feedbackTextView.isSelectable = true
+        feedbackTextView.drawsBackground = false
+        feedbackTextView.textContainerInset = NSSize(width: 8, height: 6)
+        feedbackTextView.textContainer?.widthTracksTextView = true
+        feedbackTextView.textContainer?.heightTracksTextView = false
+        feedbackTextView.isVerticallyResizable = true
+        feedbackTextView.isHorizontallyResizable = false
+        feedbackTextView.autoresizingMask = [.width]
+        feedbackTextView.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(toggleButton)
+        addSubview(titleLabel)
+        addSubview(excerptLabel)
+        addSubview(feedbackTextView)
+
+        NSLayoutConstraint.activate([
+            toggleButton.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            toggleButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            toggleButton.widthAnchor.constraint(equalToConstant: 18),
+            toggleButton.heightAnchor.constraint(equalToConstant: 18),
+
+            titleLabel.centerYAnchor.constraint(equalTo: toggleButton.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: toggleButton.trailingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+
+            excerptLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 2),
+            excerptLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            excerptLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+
+            feedbackTextView.topAnchor.constraint(equalTo: excerptLabel.bottomAnchor, constant: 2),
+            feedbackTextView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            feedbackTextView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            feedbackTextView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func configure(
+        item: SelectionFeedback,
+        anchorKey: String,
+        accentColor: NSColor,
+        attributedFeedback: NSAttributedString,
+        onToggle: @escaping (UUID, Bool) -> Void
+    ) {
+        self.itemID = item.id
+        self.anchorKey = anchorKey
+        self.isCollapsed = item.isCollapsed
+        self.onToggle = onToggle
+
+        layer?.backgroundColor = accentColor.withAlphaComponent(0.06).cgColor
+        layer?.borderColor = accentColor.withAlphaComponent(0.45).cgColor
+        titleLabel.textColor = accentColor
+        toggleButton.contentTintColor = accentColor
+        toggleButton.image = NSImage(
+            systemSymbolName: item.isCollapsed ? "chevron.right" : "chevron.down",
+            accessibilityDescription: item.isCollapsed ? "Expand feedback" : "Collapse feedback"
+        )
+        excerptLabel.stringValue = item.selectedText
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        feedbackTextView.isHidden = item.isCollapsed
+        feedbackTextView.textStorage?.setAttributedString(attributedFeedback)
+    }
+
+    @objc private func toggleCollapsed() {
+        guard let itemID else { return }
+        onToggle?(itemID, !isCollapsed)
     }
 }
 
