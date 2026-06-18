@@ -148,36 +148,12 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         }
 
         func update(blocks: [AnswerBlock], currentAnchor: PositionAnchor, pageHeights: [String: CGFloat]) {
-            guard let documentView else { return }
+            guard documentView != nil else { return }
 
             allBlocks = blocks
             alignedBlockHeights = pageHeights
             anchorIndexByKey = Dictionary(uniqueKeysWithValues: blocks.enumerated().map { ($0.element.anchor.key, $0.offset) })
-            let displayBlocks = visibleBlocks(from: blocks, centeredOn: currentAnchor)
-            let incomingKeys = displayBlocks.map { $0.anchor.key }
-            if orderedKeys != incomingKeys {
-                documentView.subviews.forEach { $0.removeFromSuperview() }
-                blockViews.removeAll()
-                textViews.removeAll()
-                feedbackContainers.removeAll()
-                feedbackTextViews.removeAll()
-                selectionFeedbackStacks.removeAll()
-                selectionFeedbackHeightConstraints.removeAll()
-                selectionFeedbackHeights.removeAll()
-                selectionFeedbackSignatures.removeAll()
-                selectionHintLabels.removeAll()
-                anchorsByTextView.removeAll()
-                heightConstraints.removeAll()
-                feedbackHeightConstraints.removeAll()
-                feedbackHeights.removeAll()
-                orderedKeys = incomingKeys
-
-                for block in displayBlocks {
-                    let blockView = makeBlockView(for: block)
-                    documentView.addSubview(blockView)
-                    blockViews[block.anchor.key] = blockView
-                }
-            }
+            let displayBlocks = ensureVisibleBlocks(centeredOn: currentAnchor)
 
             isUpdatingText = true
             for block in displayBlocks {
@@ -388,6 +364,39 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             updateFeedback(for: block.anchor)
             updateTextViewHeight(textView)
             return container
+        }
+
+        @discardableResult
+        private func ensureVisibleBlocks(centeredOn anchor: PositionAnchor) -> [AnswerBlock] {
+            guard let documentView else { return [] }
+
+            let displayBlocks = visibleBlocks(from: allBlocks, centeredOn: anchor)
+            let incomingKeys = displayBlocks.map { $0.anchor.key }
+            guard orderedKeys != incomingKeys else { return displayBlocks }
+
+            documentView.subviews.forEach { $0.removeFromSuperview() }
+            blockViews.removeAll()
+            textViews.removeAll()
+            feedbackContainers.removeAll()
+            feedbackTextViews.removeAll()
+            selectionFeedbackStacks.removeAll()
+            selectionFeedbackHeightConstraints.removeAll()
+            selectionFeedbackHeights.removeAll()
+            selectionFeedbackSignatures.removeAll()
+            selectionHintLabels.removeAll()
+            anchorsByTextView.removeAll()
+            heightConstraints.removeAll()
+            feedbackHeightConstraints.removeAll()
+            feedbackHeights.removeAll()
+            orderedKeys = incomingKeys
+
+            for block in displayBlocks {
+                let blockView = makeBlockView(for: block)
+                documentView.addSubview(blockView)
+                blockViews[block.anchor.key] = blockView
+            }
+
+            return displayBlocks
         }
 
         private func updateSelectionHint(for textView: PaperAnswerTextView) {
@@ -755,6 +764,10 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             } else if let fallback {
                 best = (fallback.anchor, fallback.frame)
             } else if let virtualMatch = virtualPosition(at: referenceY) {
+                if !orderedKeys.contains(virtualMatch.anchor.key) {
+                    ensureVisibleBlocks(centeredOn: virtualMatch.anchor)
+                    layoutDisplayedBlocks()
+                }
                 best = virtualMatch
             } else {
                 return
