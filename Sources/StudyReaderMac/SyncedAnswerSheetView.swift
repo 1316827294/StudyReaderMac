@@ -73,8 +73,9 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private var textViews: [String: PaperAnswerTextView] = [:]
         private var feedbackContainers: [String: NSView] = [:]
         private var feedbackTextViews: [String: NSTextView] = [:]
+        private var selectionFeedbackMargins: [String: NSView] = [:]
         private var selectionFeedbackPanels: [String: [UUID: SelectionFeedbackPanelView]] = [:]
-        private var selectionFeedbackHeights: [String: CGFloat] = [:]
+        private var selectionFeedbackBottoms: [String: CGFloat] = [:]
         private var selectionHintLabels: [ObjectIdentifier: NSTextField] = [:]
         private var anchorsByTextView: [ObjectIdentifier: PositionAnchor] = [:]
         private var heightConstraints: [ObjectIdentifier: NSLayoutConstraint] = [:]
@@ -89,10 +90,13 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private var scrollObserver: NSObjectProtocol?
         private let pageMinimumHeight: CGFloat = 620
         private let blockChromeHeight: CGFloat = 50
+        private let annotationColumnWidth: CGFloat = 260
         private let renderRadius = 3
         private let syncReferenceRatio: CGFloat = 0.35
         private var isUpdatingText = false
         private var isApplyingScroll = false
+        private var isLayingOutBlocks = false
+        private var editingAnchorKey: String?
         private var suppressionGeneration = 0
         private var ignoreReaderTargetsUntil: TimeInterval = 0
 
@@ -157,9 +161,12 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             isUpdatingText = true
             for block in displayBlocks {
                 guard let textView = textViews[block.anchor.key] else { continue }
-                if textView.string != block.text {
+                let isEditingThisBlock = editingAnchorKey == block.anchor.key || textView.window?.firstResponder == textView
+                if !isEditingThisBlock, textView.string != block.text {
                     textView.string = block.text
+                    applyPlainTextDefaults(to: textView, normalizeStorage: true)
                 }
+                applyPlainTextDefaults(to: textView, normalizeStorage: !isEditingThisBlock)
                 updateFeedback(for: block.anchor)
                 updateSelectionFeedback(for: block.anchor, in: textView)
                 updateTextViewHeight(textView)
@@ -197,11 +204,31 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                   let anchor = anchorsByTextView[ObjectIdentifier(textView)]
             else { return }
 
+            editingAnchorKey = anchor.key
             onTextChanged(anchor, textView.string)
+            applyPlainTextDefaults(to: textView, normalizeStorage: false)
             if let paperTextView = textView as? PaperAnswerTextView {
                 updateSelectionFeedback(for: anchor, in: paperTextView)
             }
             updateTextViewHeight(textView)
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView,
+                  let anchor = anchorsByTextView[ObjectIdentifier(textView)]
+            else { return }
+
+            editingAnchorKey = anchor.key
+            applyPlainTextDefaults(to: textView, normalizeStorage: false)
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            if let anchor = anchorsByTextView[ObjectIdentifier(textView)],
+               editingAnchorKey == anchor.key {
+                editingAnchorKey = nil
+            }
+            applyPlainTextDefaults(to: textView, normalizeStorage: true)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -245,7 +272,6 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 self.onSelectionCheckRequested(anchor, selection)
             }
             textView.string = block.text
-            textView.font = .systemFont(ofSize: 15)
             textView.isRichText = false
             textView.allowsUndo = true
             textView.importsGraphics = false
@@ -262,10 +288,17 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             textView.backgroundColor = .clear
             textView.delegate = self
             textView.minimumPaperHeight = pageMinimumHeight
+            applyPlainTextDefaults(to: textView, normalizeStorage: true)
             textView.translatesAutoresizingMaskIntoConstraints = false
             textViews[block.anchor.key] = textView
             anchorsByTextView[ObjectIdentifier(textView)] = block.anchor
             selectionHintLabels[ObjectIdentifier(textView)] = selectionHint
+
+            let selectionFeedbackMargin = SelectionFeedbackMarginView()
+            selectionFeedbackMargin.translatesAutoresizingMaskIntoConstraints = false
+            selectionFeedbackMargin.wantsLayer = true
+            selectionFeedbackMargin.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+            selectionFeedbackMargins[block.anchor.key] = selectionFeedbackMargin
 
             let feedbackContainer = NSView()
             feedbackContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -298,6 +331,7 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             container.addSubview(selectionHint)
             container.addSubview(separator)
             container.addSubview(textView)
+            container.addSubview(selectionFeedbackMargin)
             container.addSubview(feedbackContainer)
 
             let heightConstraint = textView.heightAnchor.constraint(equalToConstant: pageMinimumHeight)
@@ -321,8 +355,13 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
                 textView.topAnchor.constraint(equalTo: separator.bottomAnchor),
                 textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                textView.trailingAnchor.constraint(equalTo: selectionFeedbackMargin.leadingAnchor, constant: -8),
                 heightConstraint,
+
+                selectionFeedbackMargin.topAnchor.constraint(equalTo: textView.topAnchor),
+                selectionFeedbackMargin.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                selectionFeedbackMargin.bottomAnchor.constraint(equalTo: textView.bottomAnchor),
+                selectionFeedbackMargin.widthAnchor.constraint(equalToConstant: annotationColumnWidth),
 
                 feedbackContainer.topAnchor.constraint(equalTo: textView.bottomAnchor, constant: 8),
                 feedbackContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 22),
@@ -359,11 +398,12 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             textViews.removeAll()
             feedbackContainers.removeAll()
             feedbackTextViews.removeAll()
+            selectionFeedbackMargins.removeAll()
             for panelsByID in selectionFeedbackPanels.values {
                 panelsByID.values.forEach { $0.removeFromSuperview() }
             }
             selectionFeedbackPanels.removeAll()
-            selectionFeedbackHeights.removeAll()
+            selectionFeedbackBottoms.removeAll()
             selectionFeedbackSignatures.removeAll()
             selectionHintLabels.removeAll()
             anchorsByTextView.removeAll()
@@ -391,6 +431,25 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             container.layer?.backgroundColor = isCurrent
                 ? NSColor.controlAccentColor.withAlphaComponent(0.045).cgColor
                 : NSColor.textBackgroundColor.cgColor
+        }
+
+        private func applyPlainTextDefaults(to textView: NSTextView, normalizeStorage: Bool) {
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.lineBreakMode = .byWordWrapping
+            paragraphStyle.alignment = .natural
+
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 15),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraphStyle
+            ]
+
+            textView.font = .systemFont(ofSize: 15)
+            textView.textColor = .labelColor
+            textView.typingAttributes = attributes
+            textView.defaultParagraphStyle = paragraphStyle
+            guard normalizeStorage, !textView.hasMarkedText() else { return }
+            textView.textStorage?.addAttributes(attributes, range: NSRange(location: 0, length: (textView.string as NSString).length))
         }
 
         private func updateFeedback(for anchor: PositionAnchor) {
@@ -428,7 +487,8 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private func updateSelectionFeedback(for anchor: PositionAnchor, in textView: PaperAnswerTextView) {
             let key = anchor.key
             guard let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer
+                  let textContainer = textView.textContainer,
+                  let margin = selectionFeedbackMargins[key]
             else { return }
 
             let items = (selectionFeedbackByAnchor[key] ?? [])
@@ -438,10 +498,11 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                     }
                     return $0.rangeLocation < $1.rangeLocation
                 }
-            let panelWidth = max(220, textView.bounds.width - 44)
+            let panelWidth = annotationColumnWidth - 16
             let textHash = textView.string.hashValue
+            let textWidth = Int(textView.bounds.width)
             let signature = items
-                .map { "\($0.id.uuidString):\($0.rangeLocation):\($0.rangeLength):\($0.isCollapsed):\($0.feedback.hashValue):\(Int(panelWidth)):\(textHash)" }
+                .map { "\($0.id.uuidString):\($0.rangeLocation):\($0.rangeLength):\($0.isCollapsed):\($0.feedback.hashValue):\(Int(panelWidth)):\(textWidth):\(textHash)" }
                 .joined(separator: "|")
 
             if selectionFeedbackSignatures[key] == signature {
@@ -451,42 +512,36 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
             selectionFeedbackPanels[key]?.values.forEach { $0.removeFromSuperview() }
             selectionFeedbackPanels[key] = [:]
-            textContainer.exclusionPaths = []
+            selectionFeedbackBottoms[key] = 0
 
             guard !items.isEmpty else {
-                selectionFeedbackHeights[key] = 0
                 return
             }
 
-            let textWidth = max(1, textContainer.containerSize.width)
-            var exclusionPaths: [NSBezierPath] = []
-            var panelBottom: CGFloat = 0
             var occupiedBottom: CGFloat = 0
             var panelsByID: [UUID: SelectionFeedbackPanelView] = [:]
 
             layoutManager.ensureLayout(for: textContainer)
             for item in items {
-                textContainer.exclusionPaths = exclusionPaths
                 layoutManager.ensureLayout(for: textContainer)
                 guard let range = SelectionFeedbackLocator.resolvedRange(for: item, in: textView.string),
-                      let selectionRect = selectionAnchorRect(for: range, layoutManager: layoutManager, textContainer: textContainer)
+                      let anchorY = selectionAnchorY(
+                        for: range,
+                        textView: textView,
+                        margin: margin,
+                        layoutManager: layoutManager,
+                        textContainer: textContainer
+                      )
                 else { continue }
 
                 let panelHeight = selectionFeedbackHeight(for: item, width: panelWidth)
-                let requestedY = selectionRect.maxY + 8
+                let requestedY = anchorY
                 let panelY = max(requestedY, occupiedBottom + 8)
-                let textOrigin = textContainerOrigin(for: textView)
                 let panelFrame = NSRect(
-                    x: max(0, (textView.bounds.width - panelWidth) / 2),
-                    y: textOrigin.y + panelY,
+                    x: 8,
+                    y: panelY,
                     width: panelWidth,
                     height: panelHeight
-                )
-                let exclusionRect = NSRect(
-                    x: 0,
-                    y: panelY - 2,
-                    width: textWidth,
-                    height: panelHeight + 12
                 )
                 let panel = SelectionFeedbackPanelView()
                 panel.frame = panelFrame
@@ -499,16 +554,13 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 ) { [weak self] id, isCollapsed in
                     self?.onSelectionFeedbackCollapseChanged(anchor, id, isCollapsed)
                 }
-                textView.addSubview(panel)
+                margin.addSubview(panel)
                 panelsByID[item.id] = panel
-                exclusionPaths.append(NSBezierPath(rect: exclusionRect))
-                occupiedBottom = exclusionRect.maxY
-                panelBottom = max(panelBottom, panelFrame.maxY)
+                occupiedBottom = max(occupiedBottom, panelY + panelHeight + 8)
             }
 
-            textContainer.exclusionPaths = exclusionPaths
             selectionFeedbackPanels[key] = panelsByID
-            selectionFeedbackHeights[key] = panelBottom
+            selectionFeedbackBottoms[key] = occupiedBottom
             layoutManager.ensureLayout(for: textContainer)
         }
 
@@ -527,8 +579,8 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
             let anchor = anchorsByTextView[ObjectIdentifier(textView)]
             let alignedBlockHeight = anchor.flatMap { alignedBlockHeights[$0.key] }
             let feedbackHeight = anchor.map { self.feedbackHeight(for: $0.key) } ?? 0
-            let selectionFeedbackHeight = anchor.map { self.selectionFeedbackHeight(for: $0.key) } ?? 0
-            let contentHeight = ceil(max(usedHeight, selectionFeedbackHeight + 24))
+            let selectionFeedbackBottom = anchor.map { selectionFeedbackBottoms[$0.key] ?? 0 } ?? 0
+            let contentHeight = ceil(max(usedHeight, selectionFeedbackBottom + textView.textContainerInset.height + 24))
             let nextHeight = alignedBlockHeight
                 .map { max(max(120, $0 - blockChromeHeight - feedbackHeight), contentHeight) }
                 ?? max(minimumVisiblePageHeight, contentHeight)
@@ -537,18 +589,29 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 if let anchor {
                     estimatedBlockHeights[anchor.key] = alignedBlockHeight ?? (nextHeight + blockChromeHeight + feedbackHeight)
                 }
-                layoutDisplayedBlocks()
+                if !isLayingOutBlocks {
+                    layoutDisplayedBlocks()
+                }
             } else if let anchor {
                 estimatedBlockHeights[anchor.key] = alignedBlockHeight ?? (nextHeight + blockChromeHeight + feedbackHeight)
             }
         }
 
-        private func selectionAnchorRect(for range: NSRange, layoutManager: NSLayoutManager, textContainer: NSTextContainer) -> NSRect? {
+        private func selectionAnchorY(
+            for range: NSRange,
+            textView: NSTextView,
+            margin: NSView,
+            layoutManager: NSLayoutManager,
+            textContainer: NSTextContainer
+        ) -> CGFloat? {
             guard range.location != NSNotFound, range.length > 0 else { return nil }
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             guard glyphRange.length > 0 else { return nil }
             let lastGlyphIndex = NSMaxRange(glyphRange) - 1
-            return layoutManager.lineFragmentUsedRect(forGlyphAt: lastGlyphIndex, effectiveRange: nil)
+            let lineRect = layoutManager.lineFragmentUsedRect(forGlyphAt: lastGlyphIndex, effectiveRange: nil)
+            let textOrigin = textContainerOrigin(for: textView)
+            let linePointInTextView = NSPoint(x: textOrigin.x, y: textOrigin.y + lineRect.minY)
+            return margin.convert(linePointInTextView, from: textView).y
         }
 
         private func textContainerOrigin(for textView: NSTextView) -> NSPoint {
@@ -566,10 +629,6 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
 
         private func feedbackHeight(for key: String) -> CGFloat {
             feedbackHeights[key] ?? 0
-        }
-
-        private func selectionFeedbackHeight(for key: String) -> CGFloat {
-            selectionFeedbackHeights[key] ?? 0
         }
 
         private func feedbackHeight(for textView: NSTextView) -> CGFloat {
@@ -653,6 +712,9 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
         private func layoutDisplayedBlocks() {
             guard let scrollView, let documentView else { return }
 
+            isLayingOutBlocks = true
+            defer { isLayingOutBlocks = false }
+
             let width = max(1, scrollView.contentView.bounds.width)
             for key in orderedKeys {
                 guard let blockView = blockViews[key],
@@ -662,6 +724,11 @@ struct SyncedAnswerSheetView: NSViewRepresentable {
                 let y = virtualY(forIndex: index)
                 blockView.frame = CGRect(x: 0, y: y, width: width, height: height)
                 blockView.layoutSubtreeIfNeeded()
+                if let textView = textViews[key],
+                   let anchor = anchorsByTextView[ObjectIdentifier(textView)] {
+                    updateSelectionFeedback(for: anchor, in: textView)
+                    updateTextViewHeight(textView)
+                }
             }
 
             let documentHeight = max(totalVirtualHeight(), scrollView.contentView.bounds.height)
@@ -852,6 +919,14 @@ private final class PaperAnswerTextView: NSTextView {
         }
     }
 
+    override func paste(_ sender: Any?) {
+        guard let pasted = NSPasteboard.general.string(forType: .string) else {
+            super.paste(sender)
+            return
+        }
+        insertText(pasted, replacementRange: selectedRange())
+    }
+
     fileprivate func checkableSelectedText() -> String {
         checkableSelection()?.text ?? ""
     }
@@ -869,6 +944,10 @@ private final class PaperAnswerTextView: NSTextView {
             rangeLength: range.length
         )
     }
+}
+
+private final class SelectionFeedbackMarginView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 private final class SelectionFeedbackPanelView: NSView {
