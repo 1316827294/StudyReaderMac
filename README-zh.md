@@ -1,5 +1,7 @@
 # StudyReaderMac
 
+[English](README.md) | [简体中文](README-zh.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md) | [Français](README-fr.md) | [Deutsch](README-de.md)
+
 StudyReaderMac 是一款专为学生和学习者设计的 macOS 原生学习工具。它让你能够方便地在 Mac 上学习 PDF 教材或无 DRM 的 EPUB 书籍，完全不再需要厚重的实体纸质书。
 
 ## 为什么选择 StudyReaderMac？

@@ -1,5 +1,7 @@
 # StudyReaderMac
 
+[English](README.md) | [简体中文](README-zh.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md) | [Français](README-fr.md) | [Deutsch](README-de.md)
+
 StudyReaderMac은 학생과 학습자를 위해 특별히 설계된 네이티브 macOS 학습 도구입니다. 무거운 종이책 없이도 Mac에서 PDF 교재나 DRM이 없는 EPUB 책을 편리하게 학습할 수 있도록 해줍니다.
 
 ## 왜 StudyReaderMac인가요?

@@ -1,5 +1,7 @@
 # StudyReaderMac
 
+[English](README.md) | [简体中文](README-zh.md) | [日本語](README-ja.md) | [한국어](README-ko.md) | [Español](README-es.md) | [Français](README-fr.md) | [Deutsch](README-de.md)
+
 StudyReaderMac est un outil d'étude natif pour macOS conçu spécifiquement pour les étudiants et les apprenants. Il vous permet d'étudier facilement des manuels PDF ou des livres EPUB sans DRM sur votre Mac sans avoir besoin de livres papier physiques.
 
 ## Pourquoi StudyReaderMac ?
