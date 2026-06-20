@@ -19,6 +19,28 @@ Esto hace que estudiar y validar tus respuestas sea continuo, eficiente y comple
 - **Múltiples proveedores de API:** Preconfigurado con OpenAI, DeepSeek y Ollama, o usa tu propio punto de enlace personalizado.
 - **Soporte multilingüe:** Interfaz disponible en inglés, chino, japonés, coreano, español, francés y alemán.
 
+## Guía de configuración de API
+StudyReaderMac te permite usar varios modelos de IA para verificar tus respuestas. Ve a **Ajustes** para configurar tu proveedor de API preferido:
+
+- **OpenAI:** 
+  - Selecciona "OpenAI" en la lista de proveedores de API.
+  - Ingresa tu clave API de OpenAI.
+  - El modelo predeterminado es `gpt-4o`.
+- **DeepSeek:**
+  - Selecciona "DeepSeek".
+  - Ingresa tu clave API de DeepSeek.
+  - El modelo predeterminado es `deepseek-chat`.
+- **Ollama (Modelos locales):**
+  - Asegúrate de tener Ollama ejecutándose localmente.
+  - Selecciona "Ollama". La dirección de la API se autocompletará a `http://localhost:11434/v1/chat/completions`.
+  - El modelo predeterminado es `llama3` (asegúrate de haber ejecutado `ollama run llama3`).
+  - **Nota:** La aplicación requiere que se complete una clave API. Para Ollama, simplemente ingresa cualquier texto ficticio como `ollama`.
+- **Personalizado / LM Studio:**
+  - Selecciona "Personalizado".
+  - Ingresa tu URL de endpoint compatible (por ejemplo, `http://localhost:1234/v1/chat/completions` para LM Studio).
+  - Ingresa el nombre exacto del modelo.
+  - Ingresa tu clave API (o una clave ficticia si se ejecuta localmente sin autenticación).
+
 ## Ejecutar
 
 ```bash

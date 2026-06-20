@@ -19,6 +19,28 @@ StudyReaderMac은 학생과 학습자를 위해 특별히 설계된 네이티브
 - **다중 API 제공업체:** OpenAI, DeepSeek, Ollama가 기본 설정되어 있으며, 사용자 지정 엔드포인트도 사용할 수 있습니다.
 - **다국어 지원:** 인터페이스는 영어, 중국어, 일본어, 한국어, 스페인어, 프랑스어, 독일어로 제공됩니다.
 
+## API 설정 가이드
+StudyReaderMac을 사용하면 다양한 AI 모델을 사용하여 답변을 확인할 수 있습니다. **설정**에서 선호하는 API 제공업체를 구성하세요:
+
+- **OpenAI:** 
+  - API 제공자 목록에서 "OpenAI"를 선택합니다.
+  - OpenAI API 키를 입력합니다.
+  - 기본 모델은 `gpt-4o`입니다.
+- **DeepSeek:**
+  - "DeepSeek"을 선택합니다.
+  - DeepSeek API 키를 입력합니다.
+  - 기본 모델은 `deepseek-chat`입니다.
+- **Ollama (로컬 모델):**
+  - Ollama가 로컬에서 실행 중인지 확인하세요.
+  - "Ollama"를 선택하면 API 주소가 `http://localhost:11434/v1/chat/completions`로 자동 채워집니다.
+  - 기본 모델은 `llama3`입니다(미리 `ollama run llama3`를 실행해 두세요).
+  - **참고:** 앱에서는 API 키를 반드시 입력해야 합니다. Ollama의 경우 `ollama`와 같은 더미 텍스트를 입력하면 됩니다.
+- **사용자 지정 / LM Studio:**
+  - "사용자 지정"을 선택합니다.
+  - 호환되는 엔드포인트 URL을 입력합니다(예: LM Studio의 경우 `http://localhost:1234/v1/chat/completions`).
+  - 정확한 모델 이름을 입력합니다.
+  - API 키를 입력합니다(인증이 없는 로컬 모델인 경우 더미 키 입력).
+
 ## 실행
 
 ```bash

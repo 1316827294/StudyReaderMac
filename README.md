@@ -19,6 +19,28 @@ This makes studying and validating your answers seamless, efficient, and entirel
 - **Multiple API Providers:** Pre-configured with OpenAI, DeepSeek, and Ollama, or use your own custom endpoint.
 - **Multi-language Support:** Interface available in English, Chinese, Japanese, Korean, Spanish, French, and German.
 
+## API Configuration Guide
+StudyReaderMac allows you to use various AI models to verify your answers. Go to **Settings** to configure your preferred API provider:
+
+- **OpenAI:** 
+  - Select "OpenAI" from the API Provider list.
+  - Enter your OpenAI API Key.
+  - Default model is `gpt-4o`.
+- **DeepSeek:**
+  - Select "DeepSeek" from the API Provider list.
+  - Enter your DeepSeek API Key.
+  - Default model is `deepseek-chat`.
+- **Ollama (Local Models):**
+  - Make sure you have Ollama running locally.
+  - Select "Ollama". The API Address will auto-fill to `http://localhost:11434/v1/chat/completions`.
+  - Default model is `llama3` (make sure you have run `ollama run llama3`).
+  - **Note:** The app requires an API Key to be filled in. For Ollama, just enter any dummy text like `ollama`.
+- **Custom / LM Studio:**
+  - Select "Custom".
+  - Enter your compatible endpoint URL (e.g., `http://localhost:1234/v1/chat/completions` for LM Studio).
+  - Enter the exact model name.
+  - Enter your API Key (or a dummy key if running locally without authentication).
+
 ## Run
 
 ```bash
