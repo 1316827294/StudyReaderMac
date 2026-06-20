@@ -63,7 +63,7 @@ final class AppModel: ObservableObject {
     init() {
         openAIEndpointURLString = UserDefaults.standard.string(forKey: "OpenAIEndpointURL")
             ?? OpenAIClient.defaultEndpoint.absoluteString
-        modelName = UserDefaults.standard.string(forKey: "OpenAIModelName") ?? "gpt-5.5"
+        modelName = UserDefaults.standard.string(forKey: "OpenAIModelName") ?? "gpt-4o"
         apiKey = UserDefaults.standard.string(forKey: "OpenAIAPIKey") ?? ""
         feedbackAccentHex = UserDefaults.standard.string(forKey: "FeedbackAccentHex") ?? "#0A84FF"
         interfaceLanguagePreference = InterfaceLanguagePreference(
