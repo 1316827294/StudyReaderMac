@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var endpointURL = ""
     @State private var apiKey = ""
     @State private var modelName = ""
+    @State private var selectedProvider = "custom"
     @State private var feedbackAccentColor = Color.accentColor
     @State private var interfaceLanguagePreference = InterfaceLanguagePreference.system
     @State private var aiOutputLanguagePreference = AIOutputLanguagePreference.interface
@@ -20,10 +21,55 @@ struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
+                Text(appModel.localized("settings.apiProvider"))
+                    .font(.headline)
+                Picker("", selection: $selectedProvider) {
+                    Text("OpenAI").tag("openai")
+                    Text("DeepSeek").tag("deepseek")
+                    Text("Ollama").tag("ollama")
+                    Text(appModel.localized("settings.customProvider")).tag("custom")
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .onChange(of: selectedProvider) { _, newValue in
+                    switch newValue {
+                    case "openai":
+                        endpointURL = "https://api.openai.com/v1/chat/completions"
+                        if modelName.isEmpty || modelName == "deepseek-chat" || modelName == "llama3" || modelName == "gpt-5.5" {
+                            modelName = "gpt-4o"
+                        }
+                    case "deepseek":
+                        endpointURL = "https://api.deepseek.com/chat/completions"
+                        if modelName.isEmpty || modelName == "gpt-4o" || modelName == "llama3" || modelName == "gpt-5.5" {
+                            modelName = "deepseek-chat"
+                        }
+                    case "ollama":
+                        endpointURL = "http://localhost:11434/v1/chat/completions"
+                        if modelName.isEmpty || modelName == "gpt-4o" || modelName == "deepseek-chat" || modelName == "gpt-5.5" {
+                            modelName = "llama3"
+                        }
+                    default:
+                        break
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
                 Text(appModel.localized("settings.apiAddress"))
                     .font(.headline)
                 TextField(OpenAIClient.defaultEndpoint.absoluteString, text: $endpointURL)
                     .textFieldStyle(.roundedBorder)
+                    .onChange(of: endpointURL) { _, newValue in
+                        if newValue == "https://api.openai.com/v1/chat/completions" {
+                            selectedProvider = "openai"
+                        } else if newValue == "https://api.deepseek.com/chat/completions" {
+                            selectedProvider = "deepseek"
+                        } else if newValue == "http://localhost:11434/v1/chat/completions" {
+                            selectedProvider = "ollama"
+                        } else {
+                            selectedProvider = "custom"
+                        }
+                    }
                 Text(appModel.localized("settings.apiAddressHelp"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -108,6 +154,16 @@ struct SettingsView: View {
             feedbackAccentColor = Color(nsColor: appModel.feedbackAccentColor)
             interfaceLanguagePreference = appModel.interfaceLanguagePreference
             aiOutputLanguagePreference = appModel.aiOutputLanguagePreference
+            
+            if endpointURL == "https://api.openai.com/v1/chat/completions" {
+                selectedProvider = "openai"
+            } else if endpointURL == "https://api.deepseek.com/chat/completions" {
+                selectedProvider = "deepseek"
+            } else if endpointURL == "http://localhost:11434/v1/chat/completions" {
+                selectedProvider = "ollama"
+            } else {
+                selectedProvider = "custom"
+            }
         }
     }
 }

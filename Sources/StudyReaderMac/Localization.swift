@@ -224,6 +224,8 @@ enum L10n {
         "recent.percentRead": localized(en: "%d%% read", zh: "已读 %d%%", ja: "%d%% 読了", ko: "%d%% 읽음", es: "%d%% leído", fr: "%d%% lu", de: "%d%% gelesen"),
 
         "settings.title": localized(en: "Settings", zh: "设置", ja: "設定", ko: "설정", es: "Ajustes", fr: "Réglages", de: "Einstellungen"),
+        "settings.apiProvider": localized(en: "API Provider", zh: "API 厂商", ja: "API プロバイダー", ko: "API 제공자", es: "Proveedor de API", fr: "Fournisseur d'API", de: "API-Anbieter"),
+        "settings.customProvider": localized(en: "Custom", zh: "自定义", ja: "カスタム", ko: "사용자 지정", es: "Personalizado", fr: "Personnalisé", de: "Benutzerdefiniert"),
         "settings.apiAddress": localized(en: "API Address", zh: "API 地址", ja: "API アドレス", ko: "API 주소", es: "Dirección de API", fr: "Adresse API", de: "API-Adresse"),
         "settings.apiAddressHelp": localized(en: "OpenAI Chat Completions, DeepSeek, Ollama, or any compatible endpoint.", zh: "支持 OpenAI Chat Completions、DeepSeek、Ollama 或兼容接口。", ja: "OpenAI Chat Completions、DeepSeek、Ollama、または互換エンドポイント。", ko: "OpenAI Chat Completions, DeepSeek, Ollama 또는 호환 엔드포인트.", es: "OpenAI Chat Completions, DeepSeek, Ollama o cualquier endpoint compatible.", fr: "OpenAI Chat Completions, DeepSeek, Ollama ou tout endpoint compatible.", de: "OpenAI Chat Completions, DeepSeek, Ollama oder ein kompatibler Endpunkt."),
         "settings.model": localized(en: "Model", zh: "模型", ja: "モデル", ko: "모델", es: "Modelo", fr: "Modèle", de: "Modell"),
