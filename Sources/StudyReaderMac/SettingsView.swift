@@ -63,13 +63,17 @@ struct SettingsView: View {
                     .font(.headline)
                 Picker(appModel.localized("settings.interfaceLanguage"), selection: $interfaceLanguagePreference) {
                     Text(appModel.localized("settings.followSystem")).tag(InterfaceLanguagePreference.system)
-                    Text(appModel.localized("settings.english")).tag(InterfaceLanguagePreference.english)
-                    Text(appModel.localized("settings.simplifiedChinese")).tag(InterfaceLanguagePreference.simplifiedChinese)
+                    ForEach(AppLanguage.allCases, id: \.self) { language in
+                        Text(language.displayName(interfaceLanguage: appModel.interfaceLanguage))
+                            .tag(language.interfacePreference)
+                    }
                 }
                 Picker(appModel.localized("settings.aiOutputLanguage"), selection: $aiOutputLanguagePreference) {
                     Text(appModel.localized("settings.followInterface")).tag(AIOutputLanguagePreference.interface)
-                    Text(appModel.localized("settings.english")).tag(AIOutputLanguagePreference.english)
-                    Text(appModel.localized("settings.simplifiedChinese")).tag(AIOutputLanguagePreference.simplifiedChinese)
+                    ForEach(AppLanguage.allCases, id: \.self) { language in
+                        Text(language.displayName(interfaceLanguage: appModel.interfaceLanguage))
+                            .tag(language.aiOutputPreference)
+                    }
                 }
             }
 

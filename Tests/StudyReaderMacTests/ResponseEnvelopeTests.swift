@@ -138,14 +138,45 @@ final class ResponseEnvelopeTests: XCTestCase {
     }
 
     func testAIOutputLanguageCanFollowInterfaceLanguage() {
-        XCTAssertEqual(
-            AIOutputLanguagePreference.interface.resolvedLanguage(interfaceLanguage: .english),
-            .english
-        )
-        XCTAssertEqual(
-            AIOutputLanguagePreference.interface.resolvedLanguage(interfaceLanguage: .simplifiedChinese),
-            .simplifiedChinese
-        )
+        for language in AppLanguage.allCases {
+            XCTAssertEqual(
+                AIOutputLanguagePreference.interface.resolvedLanguage(interfaceLanguage: language),
+                language
+            )
+        }
+    }
+
+    func testPromptUsesAllConfiguredOutputLanguages() {
+        let expectedNames: [AppLanguage: String] = [
+            .english: "English",
+            .simplifiedChinese: "Simplified Chinese",
+            .japanese: "Japanese",
+            .korean: "Korean",
+            .spanish: "Spanish",
+            .french: "French",
+            .german: "German"
+        ]
+
+        for (language, promptName) in expectedNames {
+            let prompt = OpenAIClient.answerCheckPrompt(
+                readingText: "visible OCR text",
+                answerText: "learner answer",
+                documentName: "book.pdf",
+                readingFraction: 0.3,
+                outputLanguage: language
+            )
+            XCTAssertTrue(prompt.contains("Return only concise \(promptName) Markdown feedback."))
+        }
+    }
+
+    func testSystemLanguageResolutionUsesSupportedPrefixes() {
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "zh-Hans-US"), .simplifiedChinese)
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "ja-JP"), .japanese)
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "ko-KR"), .korean)
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "es-ES"), .spanish)
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "fr-FR"), .french)
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "de-DE"), .german)
+        XCTAssertEqual(AppLanguage.resolvedSystemLanguage(from: "it-IT"), .english)
     }
 
     // MARK: - Endpoint resolution
