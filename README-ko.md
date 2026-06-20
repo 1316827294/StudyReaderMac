@@ -25,11 +25,11 @@ StudyReaderMac을 사용하면 다양한 AI 모델을 사용하여 답변을 확
 - **OpenAI:** 
   - API 제공자 목록에서 "OpenAI"를 선택합니다.
   - OpenAI API 키를 입력합니다.
-  - 기본 모델은 `gpt-4o`입니다.
+  - 기본 모델은 `gpt-5.5`입니다.
 - **DeepSeek:**
   - "DeepSeek"을 선택합니다.
   - DeepSeek API 키를 입력합니다.
-  - 기본 모델은 `deepseek-chat`입니다.
+  - 기본 모델은 `deepseek-v4-flash`입니다.
 - **Ollama (로컬 모델):**
   - Ollama가 로컬에서 실행 중인지 확인하세요.
   - "Ollama"를 선택하면 API 주소가 `http://localhost:11434/v1/chat/completions`로 자동 채워집니다.
@@ -58,4 +58,4 @@ open dist/StudyReaderMac.app
 
 - 이 앱은 다른 앱의 창을 캡처하지 않으므로 '화면 기록' 권한이 필요하지 않습니다.
 - DRM으로 보호된 Kindle이나 Apple Books 파일은 지원되지 않습니다.
-- 기본 모델은 `gpt-4o`입니다(OpenAI 사용 시). 사용하는 API 계정에 다른 모델이 필요한 경우 설정에서 변경하세요.
+- 기본 모델은 `gpt-5.5`입니다(OpenAI 사용 시). 사용하는 API 계정에 다른 모델이 필요한 경우 설정에서 변경하세요.

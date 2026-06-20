@@ -35,17 +35,17 @@ struct SettingsView: View {
                     switch newValue {
                     case "openai":
                         endpointURL = "https://api.openai.com/v1/chat/completions"
-                        if modelName.isEmpty || modelName == "deepseek-chat" || modelName == "llama3" {
-                            modelName = "gpt-4o"
+                        if modelName.isEmpty || modelName == "deepseek-v4-flash" || modelName == "llama3" {
+                            modelName = "gpt-5.5"
                         }
                     case "deepseek":
                         endpointURL = "https://api.deepseek.com/chat/completions"
-                        if modelName.isEmpty || modelName == "gpt-4o" || modelName == "llama3" {
-                            modelName = "deepseek-chat"
+                        if modelName.isEmpty || modelName == "gpt-5.5" || modelName == "llama3" {
+                            modelName = "deepseek-v4-flash"
                         }
                     case "ollama":
                         endpointURL = "http://localhost:11434/v1/chat/completions"
-                        if modelName.isEmpty || modelName == "gpt-4o" || modelName == "deepseek-chat" {
+                        if modelName.isEmpty || modelName == "gpt-5.5" || modelName == "deepseek-v4-flash" {
                             modelName = "llama3"
                         }
                     default:
@@ -78,7 +78,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(appModel.localized("settings.model"))
                     .font(.headline)
-                TextField("gpt-4o", text: $modelName)
+                TextField("gpt-5.5", text: $modelName)
                     .textFieldStyle(.roundedBorder)
                 Text(appModel.localized("settings.modelHelp"))
                     .font(.footnote)
@@ -134,7 +134,7 @@ struct SettingsView: View {
                         ? OpenAIClient.defaultEndpoint.absoluteString
                         : trimmedEndpoint
                     appModel.modelName = modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? "gpt-4o"
+                        ? "gpt-5.5"
                         : modelName.trimmingCharacters(in: .whitespacesAndNewlines)
                     appModel.feedbackAccentHex = NSColor(feedbackAccentColor).studyReaderHexRGB ?? "#0A84FF"
                     appModel.interfaceLanguagePreference = interfaceLanguagePreference

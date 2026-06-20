@@ -25,11 +25,11 @@ StudyReaderMac vous permet d'utiliser divers modèles d'IA pour vérifier vos r�
 - **OpenAI:** 
   - Sélectionnez "OpenAI" dans la liste des fournisseurs d'API.
   - Entrez votre clé API OpenAI.
-  - Le modèle par défaut est `gpt-4o`.
+  - Le modèle par défaut est `gpt-5.5`.
 - **DeepSeek:**
   - Sélectionnez "DeepSeek".
   - Entrez votre clé API DeepSeek.
-  - Le modèle par défaut est `deepseek-chat`.
+  - Le modèle par défaut est `deepseek-v4-flash`.
 - **Ollama (Modèles locaux):**
   - Assurez-vous que Ollama est en cours d'exécution localement.
   - Sélectionnez "Ollama". L'adresse de l'API se remplira automatiquement avec `http://localhost:11434/v1/chat/completions`.
@@ -58,4 +58,4 @@ open dist/StudyReaderMac.app
 
 - L'application ne capture pas les fenêtres des autres applications et ne nécessite donc pas l'autorisation d'"Enregistrement de l'écran".
 - Les fichiers Kindle/Apple Books protégés par DRM ne sont pas pris en charge.
-- Le modèle par défaut est `gpt-4o` (lors de l'utilisation d'OpenAI) ; modifiez-le dans les Réglages si votre compte API nécessite un autre modèle.
+- Le modèle par défaut est `gpt-5.5` (lors de l'utilisation d'OpenAI) ; modifiez-le dans les Réglages si votre compte API nécessite un autre modèle.

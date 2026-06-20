@@ -25,11 +25,11 @@ StudyReaderMac 允许你使用不同的 AI 模型来检验你的答案。请在*
 - **OpenAI:** 
   - 在 API 厂商列表中选择“OpenAI”。
   - 填入你的 OpenAI API Key。
-  - 默认模型为 `gpt-4o`。
+  - 默认模型为 `gpt-5.5`。
 - **DeepSeek:**
   - 选择“DeepSeek”。
   - 填入你的 DeepSeek API Key。
-  - 默认模型为 `deepseek-chat`。
+  - 默认模型为 `deepseek-v4-flash`。
 - **Ollama (本地大模型):**
   - 请确保你的电脑上正在运行 Ollama。
   - 选择“Ollama”，API 地址会自动填充为 `http://localhost:11434/v1/chat/completions`。
@@ -58,4 +58,4 @@ open dist/StudyReaderMac.app
 
 - 本应用不会截取其他应用的窗口，因此不需要“屏幕录制”权限。
 - 不支持受 DRM 保护的 Kindle 或 Apple Books 文件。
-- 默认模型为 `gpt-4o`（使用 OpenAI 时）；如果您的 API 账号需要其他模型，请在设置中进行更改。
+- 默认模型为 `gpt-5.5`（使用 OpenAI 时）；如果您的 API 账号需要其他模型，请在设置中进行更改。
